@@ -1,0 +1,14 @@
+__pycache__
+__models__
+bin
+include
+models
+lib
+share
+*.pth
+.env
+.vscode
+.idea
+.DS_Store
+pyvenv.cfg
+env
