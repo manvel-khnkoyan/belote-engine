@@ -253,7 +253,8 @@ class PPOBeloteAgent:
                 critic_loss = nn.MSELoss()(values_new.squeeze(), batch_returns)
                 
                 # Total loss
-                total_loss = actor_loss + 0.5 * critic_loss
+                entropy = action_dists.entropy().mean()
+                total_loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy
                 
                 # Optimize
                 self.optimizer.zero_grad()

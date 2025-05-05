@@ -34,7 +34,13 @@ class Card:
     
     def higher_than(self, other, trump=None):
         if self.suit == other.suit:
-            return self.value(trump) > other.value(trump)
+            self_value = self.value(trump)
+            other_value = other.value(trump)
+
+            if self_value == other_value:
+                return self.rank > other.rank
+
+            return self_value > other_value
         
         if self.is_trump(trump):
             return True
