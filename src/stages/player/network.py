@@ -53,9 +53,14 @@ class CNNBeloteNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # Heads
-        self.policy_head = nn.Linear(256, self.total_actions)
-        self.value_head = nn.Linear(256, 1)
+        # HAEDS
+
+        # Play card
+        self.play_policy = nn.Linear(256, self.total_actions)
+        self.play_value = nn.Linear(256, 1)
+
+        # Belote/Rebelote policy
+        # ...
 
 
     def forward(self, probs_tensor, table_tensor, trump_tensor):
@@ -83,7 +88,7 @@ class CNNBeloteNetwork(nn.Module):
         shared_out = self.shared_fc(combined)
         
         # Outputs
-        policy = F.softmax(self.policy_head(shared_out), dim=-1)
-        value = self.value_head(shared_out)
+        play_policy = F.softmax(self.policy_head(shared_out), dim=-1)
+        play_value = self.value_head(shared_out)
         
-        return policy, value
+        return play_policy, play_value
