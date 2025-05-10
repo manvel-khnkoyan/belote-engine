@@ -65,4 +65,10 @@ class Deck:
             # Sort the player's hand using the custom sorting key
             self.hands[player] = sorted(player_hand, key=sort_key)
 
-            
+    def copy(self):
+        new_deck = Deck()
+        new_deck.cards = self.cards.copy()
+        for i in range(4):
+            new_deck.hands[i] = self.hands[i].copy()
+
+        return new_deck

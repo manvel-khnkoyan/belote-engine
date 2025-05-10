@@ -26,22 +26,6 @@ def parse_args():
     parser.add_argument("--output-dir", type=str, default="./models", help="Directory to save models")
     return parser.parse_args()
 
-def setup_game(seed=None):
-    trump = Trump()
-    trump.set_random_trump()
-    
-    deck = Deck()
-    deck.reset()
-    deck.deal_cards(8)
-    
-    # Create environment with random initial player
-    rng = np.random.default_rng(seed)
-    next_player = int(rng.integers(0, 4))
-
-    env = BeloteEnv(trump, deck, next_player=next_player)
-    
-    return env
-
 def train_agent(args):
     # Set random seed
     seed = int(time.time()) % 1000
@@ -56,16 +40,30 @@ def train_agent(args):
         lr=args.lr,
         gamma=args.gamma
     )
+
+    total_win = 0
     
     # Training loop
-    for episode in range(1, args.episodes + 1):
+    for episode in range(0, args.episodes):
         # Setup a new game environment
         seed = seed + 1
-        env = setup_game(seed)
+
+        # Play each game 8 consecutive times
+        if episode % 8 == 0:
+            trump = Trump()
+            trump.set_random_trump()
+            
+            deck = Deck()
+            deck.reset()
+            deck.deal_cards(8)
+
+            next_player = int(np.random.default_rng(seed).integers(0, 4))
+
+        # Setup the environment
+        env = BeloteEnv(trump, deck.copy(), next_player=next_player)
+        # Reset the environment
         agent.reset_memory(env, player=0)
-        
-        total_win = 0
-        
+
         # Play until the game is over
         while True:
             current_player = env.next_player
@@ -123,7 +121,7 @@ def train_agent(args):
                   f"Score: {env.round_scores[0]} vs {env.round_scores[1]}")
         
         # Save model at regular intervals
-        if episode % args.save_interval == 0:
+        if episode % args.save_interval == 0 and episode > 0:
             save_path = os.path.join(args.output_dir, f"belote_agent_ep{episode}.pt")
             agent.save(save_path)
             print(f"Model saved to {save_path}")

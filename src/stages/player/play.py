@@ -26,6 +26,8 @@ def parse_args():
                         help="Position of the human player (0-3)")
     parser.add_argument("--observe", action="store_true", 
                         help="Observe AI vs AI game (no human player)")
+    parser.add_argument("--test-case", type=int, default=0, choices=[0, 1],
+                        help="Special case when human plays alone to record the game for testing")
     return parser.parse_args()
 
 def setup_game():
