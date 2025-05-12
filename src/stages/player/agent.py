@@ -9,82 +9,16 @@ import torch.optim as optim
 import numpy as np
 import time
 from src.card import Card
+from src.types import ACTION_TYPE_CARD
 from src.canonical.suits_transformer import suits_canonical_transformer
 from src.states.probability import Probability
-class Memory:
-    def __init__(self):
-        self.probability_tensors = []   # Store probability tensors
-        self.tables_tensors = []        # Store table tensors
-        self.trump_tensors = []         # Store trump tensors
-        self.action_types = []
-        self.actions = []
-        self.actions_masks = []
-        self.values = []
-        self.rewards = []
-        self.log_probs = []
-
-        self.seed = int(time.time()) % 1000
-
-    def __len__(self):
-        return len(self.rewards)
-        
-    def store(self, probability_tensor, table_tensor, trump_tensor, action_type, action, actions_mask, value, reward, log_prob=None):
-        """
-        Store a transition in memory using tensor representations
-        
-        Args:
-            probability_tensor: Tensor representation of probability matrix
-            table_tensor: Tensor representation of table cards
-            trump_tensor: Tensor representation of trump
-            action_type: Type of action taken
-            action: The action taken
-            actions_mask: Mask of valid actions
-            value: Value estimate from network
-            reward: Reward received
-            log_prob: Log probability of action
-        """
-        self.probability_tensors.append(probability_tensor)
-        self.tables_tensors.append(table_tensor)
-        self.trump_tensors.append(trump_tensor)
-        self.action_types.append(action_type)
-        self.actions.append(action)
-        self.actions_masks.append(actions_mask)
-        self.values.append(value)
-        self.rewards.append(reward)
-        if log_prob is not None:
-            self.log_probs.append(log_prob)
-        
-    def clear(self):
-        self.probability_tensors = []
-        self.tables_tensors = []
-        self.trump_tensors = []
-        self.action_types = []
-        self.actions = []
-        self.actions_masks = []
-        self.log_probs = []
-        self.values = []
-        self.rewards = []
-        
-    def random_batches(self, batch_size):
-        batch_start = np.arange(0, len(self.rewards), batch_size)
-        indices = np.arange(len(self.rewards), dtype=np.int64)
-
-        self.seed += 1 
-        rng = np.random.default_rng(self.seed)
-        rng.shuffle(indices)
-        
-        batches = [indices[i:i+batch_size] for i in batch_start]
-
-        return batches
-    
-    def update_last_reward(self, reward):
-        if len(self.rewards) > 0:
-            self.rewards[-1] = reward
+from src.stages.player.memory import Memory
 
 class PPOBeloteAgent:
     def __init__(self, network, lr=0.0003, gamma=0.99, gae_lambda=0.95, 
-                 policy_clip=0.2, n_epochs=10):
+                 policy_clip=0.2, n_epochs=10, memorize=False):
 
+        self.memorize = memorize
         self.network = network
         self.optimizer = optim.Adam(network.parameters(), lr=lr, weight_decay=1e-4)
         self.memory = Memory()
@@ -97,84 +31,128 @@ class PPOBeloteAgent:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.network.to(self.device)
 
-    def reset_memory(self, env, player=0):
+        # Propability is personalized for each agent
+        self.probability = None 
+        # Current agent index in the environment
+        self.env_index = 0
+
+    def _convert_env_index(self, env_player):
+        return (self.env_index + env_player) % 4
+
+    def init(self, env, probability = None, env_index = 0):
         # Each agent has its own probability memory
-        # Separate from the environment
-        self.probability = Probability()
+        self.probability = Probability() if probability is None else probability
+        self.env_index = env_index
 
-        for card in env.deck.hands[player]:
-            self.probability.update(player, card.suit, card.rank, 1)
+        for card in env.deck.hands[env_index]: # My hand
+            self.probability.update(0, card.suit, card.rank, 1)
 
-    def update_memory(self, player, card):
+    def observe(self, env_player, action):
+        player = self._convert_env_index(env_player)
+
         # Update card knowledge for the player who played the card
-        self.probability.update(player, card.suit, card.rank, -1)
-    
-    def choose_action(self, env, memorize=False) -> Card:
+        if action['type'] == ACTION_TYPE_CARD:
+            self.probability.update(player, action['move'].suit, action['move'].rank, -1)
+
+    def choose_action(self, env):
         self.network.eval()
 
         # Get the canonical transformation for the suits
         transform, _ = suits_canonical_transformer(self.probability)
         
-        # Get Env variables as tensors with proper shapes for the network
+        # Prepare input tensors for network
         probs_tensor = self.probability.copy().change_suits(transform).to_tensor().to(self.device)
-        # Add batch and channel dimensions for Conv3D (needs to be [batch, channel, players, suits, ranks])
         probs_tensor = probs_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, 4, 4, 8]
         
         table_tensor = env.table.copy().change_suits(transform).to_tensor().to(self.device)
-        # Add batch dimension (needs to be [batch, cards, ranks, suits])
         table_tensor = table_tensor.unsqueeze(0)  # [1, 3, 8, 4]
         
         trump_tensor = env.trump.copy().change_suits(transform).to_tensor().to(self.device)
-        # Add batch dimension (needs to be [batch, suits])
         trump_tensor = trump_tensor.unsqueeze(0)  # [1, 4]
+
+        actions = []
         
-        # Get valid cards from environment
-        valid_cards = env.valid_cards()
+        # Forward pass to get policy and value based on action type
+        with torch.no_grad():
+            # action type: PLAY
+            valid_cards = env.valid_cards()
+            if len(valid_cards) > 0:
+                # Apply transformation to valid cards
+                transformed_cards = [Card(card.suit, card.rank).change_suit(transform) for card in valid_cards]
+                
+                # Get policy and value for card action type
+                card_policy, card_value = self.network(ACTION_TYPE_CARD, probs_tensor, table_tensor, trump_tensor)
+                
+                # Choose card based on policy
+                chosen_card, card_masks, action_item, log_prob = self._choose_card(transformed_cards, card_policy)
+                
+                # Map back to original card
+                original_card = valid_cards[transformed_cards.index(chosen_card)]
+                
+                actions.append({
+                    'type': ACTION_TYPE_CARD,
+                    'move': original_card,
+                    'item': action_item,
+                    'masks' : card_masks,
+                    'value' : card_value,
+                    'log_prob': log_prob
+                })
+
+            # action type: BELOTE
+            # Add other action types here when implemented
+            # ...
+
+        # If no actions are available, raise an exception
+        if not actions:
+            raise ValueError("No valid actions available")
+
+        # Best action based on the highest value
+        best_action = max(actions, key=lambda x: x['value'].item())
+
+        # If memorize is True, store the action in memory
+        if self.memorize:
+            self.memory.store(
+                probability_tensor=probs_tensor.cpu().detach().clone(),
+                table_tensor=table_tensor.cpu().detach().clone(),
+                trump_tensor=trump_tensor.cpu().detach().clone(),
+                action_type=best_action['type'],
+                action=best_action['item'],
+                actions_mask=best_action['masks'].cpu().numpy(),
+                value=best_action['value'].item(),
+                reward=0,  # Reward will be set later when the trick ends
+                log_prob=best_action['log_prob'].item()
+            )
         
+        # Return action type string and move
+        return {
+            'type': best_action['type'],
+            'move': best_action['move']
+        }
+
+    def _choose_card(self, valid_cards, card_policy):
         # Create action mask (1 for valid actions, 0 for invalid)
         action_mask = torch.zeros(self.network.total_actions, dtype=torch.float32).to(self.device)
         
         # Map each valid card to an action index
         valid_card_map = {}  # Map to store action_idx -> original card
         for card in valid_cards:
-            # Apply canonical transformation to the by creating a new Card object
-            canonical_card = Card(card.suit, card.rank).change_suit(transform) 
             # Convert card to action index (rank * num_suits + suit)
-            action_idx = canonical_card.rank * self.network.num_suits + canonical_card.suit
+            action_idx = card.rank * self.network.num_suits + card.suit
             action_mask[action_idx] = 1.0
-            valid_card_map[action_idx] = card  # Store mapping from action index to original card
+            valid_card_map[action_idx] = card
+                
+        # Apply mask to policy
+        masked_policy = self._safe_normalize(card_policy.squeeze(0), action_mask)
         
-        # Forward pass to get policy and value
-        with torch.no_grad():
-            policy, value = self.network(probs_tensor, table_tensor, trump_tensor)
-            
-            # Apply mask to policy
-            # We ensure only valid actions have non-zero probability
-            masked_policy = self._safe_normalize(policy.squeeze(0), action_mask)
-            
-            # Sample action from the masked policy
-            action_dist = torch.distributions.Categorical(masked_policy)
-            action_idx = action_dist.sample()
-            action_item = action_idx.item()
-            log_prob = action_dist.log_prob(action_idx)
-            chosen_card = valid_card_map[action_item]
+        # Sample action from the masked policy
+        action_dist = torch.distributions.Categorical(masked_policy)
+        action_idx = action_dist.sample()
+        action_item = action_idx.item()
+        log_prob = action_dist.log_prob(action_idx)
+        
+        chosen_card = valid_card_map[action_item]
 
-        # If memorize is True, store the action in memory
-        if memorize:
-            # Make CPU copies of tensors and detach from computation graph for storage
-            self.memory.store(
-                probability_tensor=probs_tensor.cpu().detach().clone(),
-                table_tensor=table_tensor.cpu().detach().clone(),
-                trump_tensor=trump_tensor.cpu().detach().clone(),
-                action_type=1,  # Assuming action type 1 for card play
-                action=action_item,
-                actions_mask=action_mask.cpu().numpy(),
-                value=value.item(),
-                reward=0,  # Reward will be set later when the trick ends
-                log_prob=log_prob.item()
-            )
-        
-        return chosen_card
+        return chosen_card, masked_policy, action_item, log_prob
 
     def learn(self, batch_size=64):
         if len(self.memory.rewards) == 0 or len(self.memory.rewards) < batch_size:
@@ -196,6 +174,7 @@ class PPOBeloteAgent:
         old_actions = torch.tensor(self.memory.actions, dtype=torch.int64).to(self.device)
         old_log_probs = torch.tensor(self.memory.log_probs, dtype=torch.float32).to(self.device)
         old_action_masks = torch.tensor(np.array(self.memory.actions_masks), dtype=torch.float32).to(self.device)
+        old_action_types = torch.tensor(self.memory.action_types, dtype=torch.int64).to(self.device)
         
         # Learning over multiple epochs
         for _ in range(self.n_epochs):
@@ -214,46 +193,86 @@ class PPOBeloteAgent:
                 if batch_tables.dim() > 4:  # If it has more than 4 dimensions
                     batch_tables = batch_tables.squeeze(1)  # Remove the extra dimension
                     
-                trump_tensor = torch.stack([self.memory.trump_tensors[i].to(self.device) for i in batch_indices])
+                batch_trump_tensor = torch.stack([self.memory.trump_tensors[i].to(self.device) for i in batch_indices])
                 # Fix extra dimension in trump tensor if needed
-                if trump_tensor.dim() > 2:  # If it has more than 2 dimensions
-                    trump_tensor = trump_tensor.squeeze(1)  # Remove the extra dimension
+                if batch_trump_tensor.dim() > 2:  # If it has more than 2 dimensions
+                    batch_trump_tensor = batch_trump_tensor.squeeze(1)  # Remove the extra dimension
                     
                 batch_actions = old_actions[batch_indices]
                 batch_log_probs = old_log_probs[batch_indices]
                 batch_returns = returns[batch_indices]
                 batch_advantages = advantages[batch_indices]
                 batch_action_masks = old_action_masks[batch_indices]
+                batch_action_types = old_action_types[batch_indices]
                 
-                # Forward pass with corrected tensor shapes
-                policy, values_new = self.network(
-                    batch_probs_tensors,
-                    batch_tables,
-                    trump_tensor,
-                )
+                # Initialize losses
+                actor_losses = []
+                critic_losses = []
+                entropy_losses = []
                 
-                # Apply action masks
-                masked_policy = self._safe_normalize(policy, batch_action_masks)
+                # Process each action type separately
+                # Get unique action types in the batch
+                unique_action_types = torch.unique(batch_action_types, dim=0)
                 
-                # Get log probabilities for actions
-                action_dists = torch.distributions.Categorical(masked_policy)
-                new_log_probs = action_dists.log_prob(batch_actions)
+                for action_type in unique_action_types:
+                    # Find indices in the batch that have this action type
+                    type_mask = batch_action_types == action_type
+                    type_indices = torch.nonzero(type_mask).squeeze(1)
+                    
+                    if len(type_indices) == 0:
+                        continue
+                    
+                    # Get data for this action type
+                    type_probs = batch_probs_tensors[type_indices]
+                    type_tables = batch_tables[type_indices]
+                    type_trump = batch_trump_tensor[type_indices]
+                    type_actions = batch_actions[type_indices]
+                    type_log_probs = batch_log_probs[type_indices]
+                    type_returns = batch_returns[type_indices]
+                    type_advantages = batch_advantages[type_indices]
+                    type_action_masks = batch_action_masks[type_indices]
+                    
+                    # Forward pass with the appropriate head based on action type
+                    policy, values_new = self.network(
+                        action_type,  # Pass the action type directly to the network
+                        type_probs,
+                        type_tables,
+                        type_trump,
+                    )
+                    
+                    # Apply action masks
+                    masked_policy = self._safe_normalize(policy, type_action_masks)
+                    
+                    # Get log probabilities for actions
+                    action_dists = torch.distributions.Categorical(masked_policy)
+                    new_log_probs = action_dists.log_prob(type_actions)
+                    
+                    # Calculate ratio (π_new / π_old)
+                    ratios = torch.exp(new_log_probs - type_log_probs)
+                    
+                    # Calculate surrogate losses
+                    surr1 = ratios * type_advantages
+                    surr2 = torch.clamp(ratios, 1-self.policy_clip, 1+self.policy_clip) * type_advantages
+                    
+                    # Actor loss for this action type
+                    type_actor_loss = -torch.min(surr1, surr2).mean()
+                    actor_losses.append(type_actor_loss)
+                    
+                    # Critic loss for this action type
+                    type_critic_loss = nn.MSELoss()(values_new.squeeze(), type_returns)
+                    critic_losses.append(type_critic_loss)
+                    
+                    # Entropy for this action type
+                    type_entropy = action_dists.entropy().mean()
+                    entropy_losses.append(type_entropy)
                 
-                # Calculate ratio (π_new / π_old)
-                ratios = torch.exp(new_log_probs - batch_log_probs)
-                
-                # Calculate surrogate losses
-                surr1 = ratios * batch_advantages
-                surr2 = torch.clamp(ratios, 1-self.policy_clip, 1+self.policy_clip) * batch_advantages
-                
-                # Actor loss
-                actor_loss = -torch.min(surr1, surr2).mean()
-                
-                # Critic loss
-                critic_loss = nn.MSELoss()(values_new.squeeze(), batch_returns)
+                # Combine losses from all action types
+                if actor_losses:
+                    actor_loss = sum(actor_losses) / len(actor_losses)
+                    critic_loss = sum(critic_losses) / len(critic_losses)
+                entropy = sum(entropy_losses) / len(entropy_losses)
                 
                 # Total loss
-                entropy = action_dists.entropy().mean()
                 total_loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy
                 
                 # Optimize

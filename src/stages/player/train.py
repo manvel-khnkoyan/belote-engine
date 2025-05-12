@@ -62,7 +62,7 @@ def train_agent(args):
         # Setup the environment
         env = BeloteEnv(trump, deck.copy(), next_player=next_player)
         # Reset the environment
-        agent.reset_memory(env, player=0)
+        agent.init(env, player=0)
 
         # Play until the game is over
         while True:
@@ -91,7 +91,7 @@ def train_agent(args):
             _, trick_ended, round_ended = env.step(card)
 
             # Update each player's memory
-            agent.update_memory(current_player, card)
+            agent.card_played(current_player, card)
 
             # calculate wins
             if trick_ended:

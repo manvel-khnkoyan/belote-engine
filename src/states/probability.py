@@ -180,6 +180,21 @@ class Probability:
     def to_tensor(self):
         return torch.tensor(self.matrix, dtype=torch.float)
     
+    def transform_matrix(self, player_step = 0, suit_step = 0, rank_step = 0):
+        matrix = np.zeros((4, 4, 8), dtype=np.float32)
+        
+        for player in range(4):
+            for suit in range(4):
+                for rank in range(8):
+                    new_player = (player + player_step) % 4
+                    new_suit = (suit + suit_step) % 4
+                    new_rank = (rank + rank_step) % 8
+                    matrix[new_player, new_suit, new_rank] = self.matrix[player, suit, rank]
+        
+        self.matrix = matrix
+        
+        return self
+    
     def change_suits(self, transform):
         for player in range(4):
             for suit in range(4):

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from src.types import ACTION_TYPE_CARD
 
 class CNNBeloteNetwork(nn.Module):
     def __init__(self):
@@ -53,27 +54,55 @@ class CNNBeloteNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # HAEDS
-
-        # Play card
-        self.play_policy = nn.Linear(256, self.total_actions)
-        self.play_value = nn.Linear(256, 1)
-
-        # Belote/Rebelote policy
-        # ...
-
-
-    def forward(self, probs_tensor, table_tensor, trump_tensor):
-        """
-        Forward pass through the network with NO shape checks.
+        # MULTIPLE HEADS (one for each action type)
         
-        Expected input shapes for card_conv:
-        - probs_tensor must be [batch, 1, 4, 4, 8] for Conv3D layer
+        # Play card - Action type 1
+        self.card_policy = nn.Linear(256, self.total_actions)
+        self.card_value = nn.Linear(256, 1)
+
+        # Belote/Rebelote policy - Action type 2
+        # self.belote_policy = nn.Linear(256, 2)  # Yes/No decision
+        # self.belote_value = nn.Linear(256, 1)
+
+
+    def forward(self, type, probs_tensor, table_tensor, trump_tensor):
+        """
+        Forward pass for 'card' action type (default).
+        
+        Args:
+            type: Type of action ('card', 'belote', etc.)
+            probs_tensor: Tensor of probabilities [batch, 1, 4, 4, 8]
+            table_tensor: Tensor of table cards [batch, 3, 8, 4]
+            trump_tensor: Tensor of trump suit [batch, 4]
+            
+        Returns:
+            tuple: (policy, value) for card actions
+        """
+        # Get features from the shared network
+        features = self._extract_features(probs_tensor, table_tensor, trump_tensor)
+        
+        # Get policy and value for card actions
+        if type == ACTION_TYPE_CARD:
+            card_policy = F.softmax(self.card_policy(features), dim=-1)
+            card_value = self.card_value(features)
+            
+            return card_policy, card_value
+        
+        # Future methods for other action types
+        # ......
+
+        raise ValueError(f"Unknown action type: {type}")
+
+    
+    def _extract_features(self, probs_tensor, table_tensor, trump_tensor):
+        """
+        Extract features from the shared network layers.
+        This allows code reuse across different action types.
         """
         # Get batch size from the input tensor
         batch_size = probs_tensor.size(0)
         
-        # Process through convolutional layers - NO SHAPE MANIPULATION
+        # Process through convolutional layers
         probs_features = self.card_conv(probs_tensor)
         probs_features = probs_features.view(batch_size, -1)  # Flatten
         
@@ -87,8 +116,4 @@ class CNNBeloteNetwork(nn.Module):
         combined = torch.cat([probs_features, table_features, trump_features], dim=1)
         shared_out = self.shared_fc(combined)
         
-        # Outputs
-        play_policy = F.softmax(self.policy_head(shared_out), dim=-1)
-        play_value = self.value_head(shared_out)
-        
-        return play_policy, play_value
+        return shared_out

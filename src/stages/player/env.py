@@ -6,8 +6,12 @@ BeloteEnv class for the Belote game environment.
     2) Round - When the current play ends (no cards left in the deck)
     3) Game - When the total game ends (until reaching the point limit) - NOT IMPLEMENTED YET
 """
+import numpy as np
 from src.states.table import Table
 from src.card import Card
+from src.types import ACTION_TYPE_CARD
+from src.card import SUIT_SYMBOLS
+
 class BeloteEnv:        
     def __init__(self, trump, deck, next_player=0):
         # States
@@ -68,8 +72,16 @@ class BeloteEnv:
                 
         # Player has no trump cards, they can play any card
         return self.deck[self.next_player]
+    
+    def step(self, action):
+        if action['type'] == ACTION_TYPE_CARD:
+            # Play a card
+            return self._play_card(action['move'])
+        
+        # Other action types
+        # ...
 
-    def step(self, card: Card):
+    def _play_card(self, card: Card):
         # we can check if the card is from valid cards from the next_player, 
         # but we assume the player will play a valid card
         # to simplify the code and reduce unnecessary calculations
@@ -118,12 +130,53 @@ class BeloteEnv:
         # Calculate the points for the current trick
         return self.table.total_points(self.trump) + bonus
 
-    def render(self):
-        if self.table.is_empty():
-            self._render_round()
+    def display_state(self):
+        # Find the trump suit
+        if np.any(self.trump.values == 1):
+            trump_suit_index = np.argmax(self.trump.values)
+            trump_suit = SUIT_SYMBOLS[trump_suit_index]
+        else:
+            trump_suit = "No"
+            
+        # Get player's cards
+        player_cards = self.deck[0]
+        game_round = 9 - len(player_cards)  # Belote has 8 rounds total (8 cards per player)
 
-        # On The table
-        self._render_table()
+        print(f"Round: {game_round} | Starts: {self.next_player} | Trump: {trump_suit}")
+        print(f"Hands: {' '.join([f"{str(player_cards[i])}" for i in range(len(player_cards))])}")
+        print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
 
-        # Render player hands
-        self._render_hands()
+    def display_table(self, recommended_card=None, your_move=False):
+        table_cards = []
+        for card in self.table.cards:
+            if card is not None:
+                # Simply show all cards without indicating who played them
+                table_cards.append(str(card))
+        
+        # Fill with placeholders if needed
+        while len(table_cards) < 4:
+            table_cards.append(".")
+        
+        table_str = " ".join(table_cards)
+        
+        available_cards = self.valid_cards()
+        available_cards_indices = [str(i + 1) for i, card in enumerate(self.deck[0]) if card in available_cards]
+
+        # Convert recommended_card to index if provided
+        recommended_idx = None
+        if recommended_card:
+            for i, card in enumerate(self.deck[0]):
+                if card == recommended_card:
+                    recommended_idx = i + 1
+                    break
+
+        if your_move:
+            rec_str = f"Recommended({recommended_idx})" if recommended_idx else ""
+            print(f"Table: {table_str} | [{','.join(available_cards_indices)}] {rec_str} Your-Move: ", end="")
+        else:
+            print(f"Table: {table_str}")
+
+    def display_summary(self):
+        print(f"Total: Last ({self.trick_scores[0]}, {self.trick_scores[1]}) Total ({self.round_scores[0]}, {self.round_scores[1]})")
+
+
