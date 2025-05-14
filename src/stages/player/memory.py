@@ -7,7 +7,7 @@ class Memory:
         self.tables_tensors = []        # Store table tensors
         self.trump_tensors = []         # Store trump tensors
         self.action_types = []
-        self.actions = []
+        self.actions = []               # Network actions
         self.actions_masks = []
         self.values = []
         self.rewards = []

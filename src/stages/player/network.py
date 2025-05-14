@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.types import ACTION_TYPE_CARD
+from src.stages.player.actions import Action
 
 class CNNBeloteNetwork(nn.Module):
     def __init__(self):
@@ -65,12 +65,12 @@ class CNNBeloteNetwork(nn.Module):
         # self.belote_value = nn.Linear(256, 1)
 
 
-    def forward(self, type, probs_tensor, table_tensor, trump_tensor):
+    def forward(self, action_type, probs_tensor, table_tensor, trump_tensor):
         """
         Forward pass for 'card' action type (default).
         
         Args:
-            type: Type of action ('card', 'belote', etc.)
+            action_type: Type of action defined in ./actions.py action type as int
             probs_tensor: Tensor of probabilities [batch, 1, 4, 4, 8]
             table_tensor: Tensor of table cards [batch, 3, 8, 4]
             trump_tensor: Tensor of trump suit [batch, 4]
@@ -82,7 +82,7 @@ class CNNBeloteNetwork(nn.Module):
         features = self._extract_features(probs_tensor, table_tensor, trump_tensor)
         
         # Get policy and value for card actions
-        if type == ACTION_TYPE_CARD:
+        if action_type == Action.TYPE_PLAY:
             card_policy = F.softmax(self.card_policy(features), dim=-1)
             card_value = self.card_value(features)
             
@@ -91,7 +91,7 @@ class CNNBeloteNetwork(nn.Module):
         # Future methods for other action types
         # ......
 
-        raise ValueError(f"Unknown action type: {type}")
+        raise ValueError(f"Unknown action type: {action_type}")
 
     
     def _extract_features(self, probs_tensor, table_tensor, trump_tensor):

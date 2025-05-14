@@ -1,4 +1,3 @@
-
 # Suit symbols for rendering
 SUIT_SYMBOLS = ['♠', '♥', '♦', '♣']
 RANK_SYMBOLS = [' 7', ' 8', ' 9', '10', ' J', ' Q', ' K', ' A']
@@ -32,6 +31,9 @@ class Card:
     def __hash__(self):
         return hash((self.suit, self.rank))
     
+    def copy(self):
+        return Card(self.suit, self.rank)
+    
     def higher_than(self, other, trump=None):
         if self.suit == other.suit:
             self_value = self.value(trump)
@@ -46,6 +48,14 @@ class Card:
             return True
         
         return False
+    
+    def change_suit(self, transform):
+        self.suit = transform(self.suit)
+
+        return self
+    
+    def is_trump(self, trump):
+        return trump.values[self.suit] == 1
     
     def value(self, trump):
         # Define values dictionary based on rank indices
@@ -72,11 +82,9 @@ class Card:
 
         return values[self.rank]
     
-    def change_suit(self, transform):
-        self.suit = transform(self.suit)
-
-        return self
+    def __getstate__(self):
+        return {"suit": self.suit, "rank": self.rank}
     
-    def is_trump(self, trump):
-        return trump.values[self.suit] == 1
-    
+    def __setstate__(self, state):
+        self.suit = state["suit"]
+        self.rank = state["rank"]

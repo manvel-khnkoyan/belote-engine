@@ -9,8 +9,8 @@ BeloteEnv class for the Belote game environment.
 import numpy as np
 from src.states.table import Table
 from src.card import Card
-from src.types import ACTION_TYPE_CARD
 from src.card import SUIT_SYMBOLS
+from src.stages.player.actions import Action, ActionCardMove
 
 class BeloteEnv:        
     def __init__(self, trump, deck, next_player=0):
@@ -22,6 +22,7 @@ class BeloteEnv:
         # Game state
         self.next_player = next_player
         self.round_scores = [0, 0] # i % 2
+        self.trick_scores = [0, 0] # i % 2
 
         self.reset_trick()
 
@@ -73,10 +74,10 @@ class BeloteEnv:
         # Player has no trump cards, they can play any card
         return self.deck[self.next_player]
     
-    def step(self, action):
-        if action['type'] == ACTION_TYPE_CARD:
+    def step(self, action: Action):
+        if isinstance(action, ActionCardMove):
             # Play a card
-            return self._play_card(action['move'])
+            return self._play_card(action.card)
         
         # Other action types
         # ...
@@ -142,11 +143,12 @@ class BeloteEnv:
         player_cards = self.deck[0]
         game_round = 9 - len(player_cards)  # Belote has 8 rounds total (8 cards per player)
 
+        print()
         print(f"Round: {game_round} | Starts: {self.next_player} | Trump: {trump_suit}")
         print(f"Hands: {' '.join([f"{str(player_cards[i])}" for i in range(len(player_cards))])}")
         print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
 
-    def display_table(self, recommended_card=None, your_move=False):
+    def display_table(self, end=None):
         table_cards = []
         for card in self.table.cards:
             if card is not None:
@@ -155,28 +157,49 @@ class BeloteEnv:
         
         # Fill with placeholders if needed
         while len(table_cards) < 4:
-            table_cards.append(".")
+            table_cards.append(" . ")
         
-        table_str = " ".join(table_cards)
-        
+        print(f"Table: {" ".join(table_cards)}", end=end)
+
+    def display_available_cards(self, player, end=None):
         available_cards = self.valid_cards()
-        available_cards_indices = [str(i + 1) for i, card in enumerate(self.deck[0]) if card in available_cards]
+        available_cards_indices = [str(i + 1) for i, card in enumerate(self.deck[player]) if card in available_cards]
 
-        # Convert recommended_card to index if provided
-        recommended_idx = None
-        if recommended_card:
-            for i, card in enumerate(self.deck[0]):
-                if card == recommended_card:
-                    recommended_idx = i + 1
-                    break
-
-        if your_move:
-            rec_str = f"Recommended({recommended_idx})" if recommended_idx else ""
-            print(f"Table: {table_str} | [{','.join(available_cards_indices)}] {rec_str} Your-Move: ", end="")
-        else:
-            print(f"Table: {table_str}")
+        print(f"[{','.join(available_cards_indices)}]", end=end)
 
     def display_summary(self):
-        print(f"Total: Last ({self.trick_scores[0]}, {self.trick_scores[1]}) Total ({self.round_scores[0]}, {self.round_scores[1]})")
+        trick_gain = self.trick_scores[0]
+        trick_loss = self.trick_scores[1]
+
+        round_gain = self.round_scores[0]
+        round_loss = self.round_scores[1]
+
+        print(f"Total: Last ({trick_gain}, {trick_loss}) Total ({round_gain}, {round_loss})")
+
+    def __getstate__(self):
+        """
+        Return state for pickling.
+        This method is called when the instance is being pickled.
+        """
+        return {
+            "deck": self.deck,
+            "trump": self.trump,
+            "table": self.table,
+            "next_player": self.next_player,
+            "round_scores": self.round_scores,
+            "trick_scores": self.trick_scores
+        }
+    
+    def __setstate__(self, state):
+        """
+        Restore state from the unpickled state values.
+        This method is called when the instance is being unpickled.
+        """
+        self.deck = state["deck"]
+        self.trump = state["trump"]
+        self.table = state["table"]
+        self.next_player = state["next_player"]
+        self.round_scores = state["round_scores"]
+        self.trick_scores = state["trick_scores"]
 
 

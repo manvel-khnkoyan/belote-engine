@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 class Trump:
     """
     Represents the trump suit state in a Belote game.
@@ -48,11 +49,18 @@ class Trump:
     
     def change_suits(self, transform):
         self.values = [self.values[transform(i)] for i in range(4)]
-
         return self
         
     def copy(self):
         new = Trump()
         new.values = np.copy(self.values)
-
         return new
+    
+    def __getstate__(self):
+        return {
+            "values": self.values.tolist()
+        }
+    
+    def __setstate__(self, state):
+        # Convert the list back to a NumPy array with the correct dtype
+        self.values = np.array(state["values"], dtype=np.int32)

@@ -1,4 +1,5 @@
 from src.card import Card
+from src.states.trump import Trump
 import random
 
 class Deck:
@@ -24,7 +25,7 @@ class Deck:
             for player in range(4):
                 self.hands[player].append(self.cards.pop())
     
-    def remove_card(self, player_idx, card):
+    def remove_card(self, player_idx, card: Card):
         # player_hand is directly the list of cards
         player_hand = self[player_idx]  # This is already the list of cards
         
@@ -44,7 +45,7 @@ class Deck:
 
         return True
         
-    def reorder_hands(self, trump):
+    def reorder_hands(self, trump: Trump):
         for player in range(4):
             player_hand = self.hands[player]
             
@@ -72,3 +73,13 @@ class Deck:
             new_deck.hands[i] = self.hands[i].copy()
 
         return new_deck
+    
+    def __getstate__(self):
+        return {
+            "hands": self.hands,
+            "cards": self.cards
+        }
+    
+    def __setstate__(self, state):
+        self.hands = state["hands"]
+        self.cards = state["cards"]

@@ -28,8 +28,7 @@ class Probability:
                     self.matrix[player, suit, rank] = 1 if player == 0 else 0
                 else:
                     self.matrix[player, suit, rank] = 1/3
-        
-    
+
     """
     Update a player's probability for a card to an absolute value,
     redistributing the difference proportionally among other players.
@@ -208,3 +207,14 @@ class Probability:
         new.matrix = np.copy(self.matrix)
         
         return new
+    
+    def __getstate__(self):
+        # Convert NumPy array to a regular list for better compatibility
+        return {
+            "matrix": self.matrix.tolist()
+        }
+    
+    def __setstate__(self, state):
+        # Convert the list back to a NumPy array with the correct dtype
+        self.matrix = np.array(state["matrix"], dtype=np.float32)
+        

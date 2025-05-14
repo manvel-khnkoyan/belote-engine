@@ -1,31 +1,28 @@
-from src.types import ACTION_TYPE_CARD
 
-class Human:
-    def __init__(self):
-        self.env = None
+from src.card import Card
+from src.stages.player.agent import PPOBeloteAgent
+from src.stages.player.actions import ActionCardMove
 
-    def init(self, env, env_index):
-        self.env_index = env_index
-        return None
-
-    def observe(self, player_index, action):
-        return None
-
-    def choose_action(self, env):        
-        # Get the selected card from the human player
-        card = self._get_selected_card(env)
-        
-        return {
-            'type': ACTION_TYPE_CARD,
-            'move': card
-        }
-
-    def _get_selected_card(self, env):
+class Human(PPOBeloteAgent):
+    def choose_action(self, env):
         valid_cards = env.valid_cards()
+        recomended_action = super().choose_action(env)
+
+        recomended_action_index = None
+        for i, card in enumerate(env.deck[self.env_index]):
+            if card == recomended_action.card:
+                recomended_action_index = i
+
+        if isinstance(recomended_action, ActionCardMove):
+            print(f"Recommended:{recomended_action.card} ({recomended_action_index + 1})", end=" ")
+
+        # Get the selected card from the human player
+        action = self._get_selected_actions(env)
         
-        if not valid_cards:
-            print("You have no valid cards to play!")
-            return None
+        return action
+
+    def _get_selected_actions(self, env):
+        valid_cards = env.valid_cards()
         
         # Create a mapping of card indices to cards
         card_map = {}
@@ -37,7 +34,7 @@ class Human:
             try:
                 choice = int(input())
                 if choice in card_map and card_map[choice] in valid_cards:
-                    return card_map[choice]
+                    return ActionCardMove(card_map[choice])
                 else:
                     print("Invalid choice. Enter a number from your hand for a valid card: ", end="")
             except ValueError:

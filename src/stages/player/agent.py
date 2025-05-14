@@ -9,15 +9,16 @@ import torch.optim as optim
 import numpy as np
 import time
 from src.card import Card
-from src.types import ACTION_TYPE_CARD
 from src.canonical.suits_transformer import suits_canonical_transformer
 from src.states.probability import Probability
 from src.stages.player.memory import Memory
+from src.stages.player.actions import Action, ActionCardMove
 
 class PPOBeloteAgent:
     def __init__(self, network, lr=0.0003, gamma=0.99, gae_lambda=0.95, 
                  policy_clip=0.2, n_epochs=10, memorize=False):
 
+        self.name = 'AI'
         self.memorize = memorize
         self.network = network
         self.optimizer = optim.Adam(network.parameters(), lr=lr, weight_decay=1e-4)
@@ -47,12 +48,12 @@ class PPOBeloteAgent:
         for card in env.deck.hands[env_index]: # My hand
             self.probability.update(0, card.suit, card.rank, 1)
 
-    def observe(self, env_player, action):
+    def observe(self, env_player: int, action: Action):
         player = self._convert_env_index(env_player)
 
         # Update card knowledge for the player who played the card
-        if action['type'] == ACTION_TYPE_CARD:
-            self.probability.update(player, action['move'].suit, action['move'].rank, -1)
+        if isinstance(action, ActionCardMove):
+            self.probability.update(player, action.card.suit, action.card.rank, -1)
 
     def choose_action(self, env):
         self.network.eval()
@@ -64,24 +65,28 @@ class PPOBeloteAgent:
         probs_tensor = self.probability.copy().change_suits(transform).to_tensor().to(self.device)
         probs_tensor = probs_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, 4, 4, 8]
         
-        table_tensor = env.table.copy().change_suits(transform).to_tensor().to(self.device)
+        # For table tensor - make sure change_suits returns a new object and doesn't modify in place
+        transformed_table = env.table.copy().change_suits(transform)
+        table_tensor = transformed_table.to_tensor().to(self.device)
         table_tensor = table_tensor.unsqueeze(0)  # [1, 3, 8, 4]
         
-        trump_tensor = env.trump.copy().change_suits(transform).to_tensor().to(self.device)
+        # For trump tensor - same approach
+        transformed_trump = env.trump.copy().change_suits(transform)
+        trump_tensor = transformed_trump.to_tensor().to(self.device)
         trump_tensor = trump_tensor.unsqueeze(0)  # [1, 4]
 
-        actions = []
+        network_actions = []
         
-        # Forward pass to get policy and value based on action type
+       # Forward pass to get policy and value based on action type
         with torch.no_grad():
             # action type: PLAY
-            valid_cards = env.valid_cards()
+            valid_cards = env.valid_cards()  # This is fine if it just returns references without modifying
             if len(valid_cards) > 0:
-                # Apply transformation to valid cards
-                transformed_cards = [Card(card.suit, card.rank).change_suit(transform) for card in valid_cards]
+                # Create new Card objects for transformation to avoid modifying originals
+                transformed_cards = [card.copy().change_suit(transform) for card in valid_cards]
                 
                 # Get policy and value for card action type
-                card_policy, card_value = self.network(ACTION_TYPE_CARD, probs_tensor, table_tensor, trump_tensor)
+                card_policy, card_value = self.network(Action.TYPE_PLAY, probs_tensor, table_tensor, trump_tensor)
                 
                 # Choose card based on policy
                 chosen_card, card_masks, action_item, log_prob = self._choose_card(transformed_cards, card_policy)
@@ -89,12 +94,12 @@ class PPOBeloteAgent:
                 # Map back to original card
                 original_card = valid_cards[transformed_cards.index(chosen_card)]
                 
-                actions.append({
-                    'type': ACTION_TYPE_CARD,
+                network_actions.append({
+                    'type': Action.TYPE_PLAY,
                     'move': original_card,
                     'item': action_item,
-                    'masks' : card_masks,
-                    'value' : card_value,
+                    'masks': card_masks,
+                    'value': card_value,
                     'log_prob': log_prob
                 })
 
@@ -103,11 +108,11 @@ class PPOBeloteAgent:
             # ...
 
         # If no actions are available, raise an exception
-        if not actions:
+        if not network_actions:
             raise ValueError("No valid actions available")
 
         # Best action based on the highest value
-        best_action = max(actions, key=lambda x: x['value'].item())
+        best_network_action = max(network_actions, key=lambda x: x['value'].item())
 
         # If memorize is True, store the action in memory
         if self.memorize:
@@ -115,19 +120,19 @@ class PPOBeloteAgent:
                 probability_tensor=probs_tensor.cpu().detach().clone(),
                 table_tensor=table_tensor.cpu().detach().clone(),
                 trump_tensor=trump_tensor.cpu().detach().clone(),
-                action_type=best_action['type'],
-                action=best_action['item'],
-                actions_mask=best_action['masks'].cpu().numpy(),
-                value=best_action['value'].item(),
+                action_type=best_network_action['type'],
+                action=best_network_action['item'],
+                actions_mask=best_network_action['masks'].cpu().numpy(),
+                value=best_network_action['value'].item(),
                 reward=0,  # Reward will be set later when the trick ends
-                log_prob=best_action['log_prob'].item()
+                log_prob=best_network_action['log_prob'].item()
             )
         
-        # Return action type string and move
-        return {
-            'type': best_action['type'],
-            'move': best_action['move']
-        }
+        # Return action object
+        if best_network_action['type'] == Action.TYPE_PLAY:
+            return ActionCardMove(best_network_action['move'])
+
+        raise NotImplemented(f"{best_network_action['type']} action type not implemeted")
 
     def _choose_card(self, valid_cards, card_policy):
         # Create action mask (1 for valid actions, 0 for invalid)
