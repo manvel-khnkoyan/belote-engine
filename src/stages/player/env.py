@@ -131,7 +131,7 @@ class BeloteEnv:
         # Calculate the points for the current trick
         return self.table.total_points(self.trump) + bonus
 
-    def display_state(self):
+    def display_state(self, player=0):
         # Find the trump suit
         if np.any(self.trump.values == 1):
             trump_suit_index = np.argmax(self.trump.values)
@@ -140,11 +140,11 @@ class BeloteEnv:
             trump_suit = "No"
             
         # Get player's cards
-        player_cards = self.deck[0]
+        player_cards = self.deck[player]
         game_round = 9 - len(player_cards)  # Belote has 8 rounds total (8 cards per player)
 
         print()
-        print(f"Round: {game_round} | Starts: {self.next_player} | Trump: {trump_suit}")
+        print(f"Round: {game_round} | Player: {self.next_player} | Trump: {trump_suit}")
         print(f"Hands: {' '.join([f"{str(player_cards[i])}" for i in range(len(player_cards))])}")
         print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
 
@@ -168,38 +168,9 @@ class BeloteEnv:
         print(f"[{','.join(available_cards_indices)}]", end=end)
 
     def display_summary(self):
-        trick_gain = self.trick_scores[0]
-        trick_loss = self.trick_scores[1]
-
         round_gain = self.round_scores[0]
         round_loss = self.round_scores[1]
 
-        print(f"Total: Last ({trick_gain}, {trick_loss}) Total ({round_gain}, {round_loss})")
-
-    def __getstate__(self):
-        """
-        Return state for pickling.
-        This method is called when the instance is being pickled.
-        """
-        return {
-            "deck": self.deck,
-            "trump": self.trump,
-            "table": self.table,
-            "next_player": self.next_player,
-            "round_scores": self.round_scores,
-            "trick_scores": self.trick_scores
-        }
-    
-    def __setstate__(self, state):
-        """
-        Restore state from the unpickled state values.
-        This method is called when the instance is being unpickled.
-        """
-        self.deck = state["deck"]
-        self.trump = state["trump"]
-        self.table = state["table"]
-        self.next_player = state["next_player"]
-        self.round_scores = state["round_scores"]
-        self.trick_scores = state["trick_scores"]
-
+        win_or_lost = 'N-[0]' if round_gain > round_loss else 'N-[1]'
+        print(f"Total: Won {win_or_lost}, Total ({round_gain}, {round_loss})")
 

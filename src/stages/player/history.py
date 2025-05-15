@@ -1,33 +1,42 @@
 import os
-import numpy as np
 import pickle
-from src.deck import Deck
-from src.states.trump import Trump
+from src.stages.player.env import BeloteEnv
 
 class History:
-    def __init__(self, env):
-        self.env = env
+    def __init__(self, env=None):
         self.cursor = 0
         self.actions = []
-
-    def __getstate__(self):
-        return {
-            "env": self.env,
-            "actions": self.actions
-        }
+        
+        # Save Env :(
+        if env != None:
+            self.save_env(env)
 
     def reset(self):
         self.cursor = 0
 
-    def read(self):
+    def save_env(self, env):
+        self.env = {
+            'deck': env.deck.copy(),
+            'trump': env.trump.copy(),
+            'player': env.next_player
+        }
+
+    def load_env(self):
+        if self.env == None:
+            raise ValueError("History snapshot not found, try to save env whle implementing history")
+
+        return BeloteEnv(trump=self.env['trump'], deck=self.env['deck'], next_player=self.env['player'])
+
+    def next_action(self):
         if self.cursor >= len(self.actions):
             return None
         
         item = self.actions[self.cursor]
+        self.cursor += 1
 
-        return item.action, item.player
+        return item['action'], item['player']
 
-    def write(self, player, action):
+    def add_action(self, player, action):
         self.actions.append({
             'player': player,
             'action': action,
@@ -36,9 +45,8 @@ class History:
     def save(self, path):
         with open(path, 'wb') as file:  # Note: binary mode
             pickle.dump({
-                "cursor": self.cursor,
+                "env": self.env,
                 "actions": self.actions
-                # Don't include env as it might be too complex
             }, file)
 
     def load(self, path):
@@ -47,17 +55,15 @@ class History:
         
         with open(path, 'rb') as file:  # Note: binary mode
             data = pickle.load(file)
-            self.cursor = data["cursor"]
+            self.env = data["env"]
             self.actions = data["actions"]
 
     def __getstate__(self):
         return {
             "env": self.env,
-            "cursor": self.cursor,
-            "actions": self.actions
+            "actions" : self.actions
         }
 
     def __setstate__(self, state):
         self.env = state["env"]
-        self.cursor = state["cursor"]
         self.actions = state["actions"]

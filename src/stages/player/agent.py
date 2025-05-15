@@ -7,12 +7,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import time
+import os
 from src.card import Card
+from src.deck import Deck
+from src.states.trump import Trump
+from src.states.table import Table
 from src.canonical.suits_transformer import suits_canonical_transformer
 from src.states.probability import Probability
 from src.stages.player.memory import Memory
 from src.stages.player.actions import Action, ActionCardMove
+from src.stages.player.env import BeloteEnv
 
 class PPOBeloteAgent:
     def __init__(self, network, lr=0.0003, gamma=0.99, gae_lambda=0.95, 
@@ -37,8 +41,8 @@ class PPOBeloteAgent:
         # Current agent index in the environment
         self.env_index = 0
 
-    def _convert_env_index(self, env_player):
-        return (self.env_index + env_player) % 4
+    #def _convert_env_index(self, env_player):
+    #    return (self.env_index + env_player) % 4
 
     def init(self, env, probability = None, env_index = 0):
         # Each agent has its own probability memory
@@ -48,8 +52,8 @@ class PPOBeloteAgent:
         for card in env.deck.hands[env_index]: # My hand
             self.probability.update(0, card.suit, card.rank, 1)
 
-    def observe(self, env_player: int, action: Action):
-        player = self._convert_env_index(env_player)
+    def observe(self, player: int, action: Action):
+        # player = self._convert_env_index(player)
 
         # Update card knowledge for the player who played the card
         if isinstance(action, ActionCardMove):
@@ -77,7 +81,7 @@ class PPOBeloteAgent:
 
         network_actions = []
         
-       # Forward pass to get policy and value based on action type
+        # Forward pass to get policy and value based on action type
         with torch.no_grad():
             # action type: PLAY
             valid_cards = env.valid_cards()  # This is fine if it just returns references without modifying

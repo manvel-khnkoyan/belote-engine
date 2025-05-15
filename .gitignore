@@ -3,11 +3,11 @@ __models__
 bin
 include
 models
+histories
 lib
 share
 *.pth
 .env
-.vscode
 .idea
 .DS_Store
 pyvenv.cfg

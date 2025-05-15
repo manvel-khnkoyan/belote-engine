@@ -1,6 +1,3 @@
-"""
-Training script for the Belote AI agent using PPO algorithm.
-"""
 
 import os
 import argparse
@@ -9,47 +6,56 @@ import time
 from src.stages.player.env import BeloteEnv
 from src.stages.player.network import CNNBeloteNetwork
 from src.stages.player.agent import PPOBeloteAgent
+from src.stages.player.randomer import Randomer
 from src.states.table import Table
 from src.states.probability import Probability
 from src.states.trump import Trump
 from src.card import Card
 from src.deck import Deck
+from src.stages.player.actions import ActionCardMove
+from simulation import play  # Import the play function from simulation.py
 
 def parse_args():
+    root = os.environ.get("PROJECT_ROOT")
+    save_path = os.path.join(root, 'models')
+    os.makedirs(save_path, exist_ok=True)
+
     parser = argparse.ArgumentParser(description="Train a Belote agent using PPO")
-    parser.add_argument("--episodes", type=int, default=10000, help="Number of episodes to train")
+    parser.add_argument("--episodes", type=int, default=200, help="Number of episodes to train")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size for PPO updates")
     parser.add_argument("--lr", type=float, default=0.0003, help="Learning rate")
     parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
     parser.add_argument("--save-interval", type=int, default=100, help="Save model every N episodes")
     parser.add_argument("--eval-interval", type=int, default=500, help="Evaluate model every N episodes") 
-    parser.add_argument("--output-dir", type=str, default="./models", help="Directory to save models")
+    parser.add_argument("--display", action="store_true", help="Display game progress")
+    parser.add_argument("--save-path", type=str, default=save_path, help="Display game progress")
     return parser.parse_args()
 
 def train_agent(args):
     # Set random seed
-    seed = int(time.time()) % 1000
-
-    # Create output directory
-    os.makedirs(args.output_dir, exist_ok=True)
+    seed = int(time.time()) % 1000    
     
     # Initialize the neural network and agent
     network = CNNBeloteNetwork()
     agent = PPOBeloteAgent(
         network=network,
         lr=args.lr,
-        gamma=args.gamma
+        gamma=args.gamma,
+        memorize=True  # Set memorize to True for training
     )
 
-    total_win = 0
+    # Create random agents for other players
+    random_agents = [Randomer() for _ in range(3)]
+    
+    total_wins = 0
     
     # Training loop
     for episode in range(0, args.episodes):
         # Setup a new game environment
         seed = seed + 1
 
-        # Play each game 8 consecutive times
-        if episode % 8 == 0:
+        # Play each game 4 consecutive times with the same deck
+        if episode % 4 == 0:
             trump = Trump()
             trump.set_random_trump()
             
@@ -61,73 +67,40 @@ def train_agent(args):
 
         # Setup the environment
         env = BeloteEnv(trump, deck.copy(), next_player=next_player)
-        # Reset the environment
-        agent.init(env, player=0)
-
-        # Play until the game is over
-        while True:
-            current_player = env.next_player
-            
-            # If it's the agent's turn (player 0)
-            if current_player == 0:
-                # Choose an action using the agent
-                card = agent.choose_action(env, memorize=True)
-            else:
-                # Choose random valid action for other players
-                valid_cards = env.valid_cards()
-                
-                # Check if valid_cards is empty, which should not happen in a valid game state
-                if len(valid_cards) == 0:
-                    print(f"Warning: No valid cards for player {current_player}. Resetting game.")
-                    # Skip this episode and try again
-                    break
-                
-                # Set seed for this specific choice to ensure reproducibility
-                seed = seed + 1
-                rng = np.random.default_rng(seed)
-                card = rng.choice(valid_cards)
-            
-            # Take the action in the environment
-            _, trick_ended, round_ended = env.step(card)
-
-            # Update each player's memory
-            agent.card_played(current_player, card)
-
-            # calculate wins
-            if trick_ended:
-                total_win += 1 if env.trick_scores[0] > env.trick_scores[1] else 0
-
-            if round_ended:
-                total_reward = env.round_scores[0] - env.round_scores[1]
-                agent.memory.update_last_reward(total_reward * 2)
-
-                break
-
-            if trick_ended:
-                trick_reward = env.trick_scores[0] - env.trick_scores[1]
-                agent.memory.update_last_reward(trick_reward)
-
-                env.reset_trick()    
-                    
+        
+        # Setup all agents - the PPO agent at position 0, and random agents at other positions
+        agents = [agent] + random_agents
+        
+        # Use the play function from simulation.py to play the game
+        team0_score, team1_score, _ = play(env, agents, history=None, display=args.display)
+        
+        # Update wins count if team 0 (with our agent) won
+        if team0_score > team1_score:
+            total_wins += 1
+        
+        # Update final reward in agent's memory
+        total_reward = team0_score - team1_score
+        agent.memory.update_last_reward(total_reward * 2)  # Multiplied by 2 to maintain the same scale as before
+        
         # Print progress and perform learning every 10 episodes
         if episode % 10 == 0 and len(agent.memory) > 0:
-            # Learn from experiences with current trump for proper value estimation
+            # Learn from experiences
             agent.learn(batch_size=min(args.batch_size, len(agent.memory)))
             
-            # Only clear memory after learning to make use of all experiences
+            # Clear memory after learning
             agent.memory.clear()
 
-            print(f"Episode {episode}, Round Won: {total_win} "
-                  f"Score: {env.round_scores[0]} vs {env.round_scores[1]}")
+            print(f"Episode {episode}, Rounds Won: {total_wins} "
+                  f"Score: {team0_score} vs {team1_score}")
         
         # Save model at regular intervals
         if episode % args.save_interval == 0 and episode > 0:
-            save_path = os.path.join(args.output_dir, f"belote_agent_ep{episode}.pt")
-            agent.save(save_path)
-            print(f"Model saved to {save_path}")
+            path = os.path.join(args.save_path, f"belote_agent_ep{episode}.pt")
+            agent.save(path)
+            print(path)
     
     # Save the final model
-    final_path = os.path.join(args.output_dir, "belote_agent_final.pt")
+    final_path = os.path.join(args.save_path, "belote_agent_final.pt")
     agent.save(final_path)
     print(f"Training completed. Final model saved to {final_path}")
 
