@@ -131,7 +131,7 @@ class BeloteEnv:
         # Calculate the points for the current trick
         return self.table.total_points(self.trump) + bonus
 
-    def display_state(self, player=0):
+    def display_state(self):
         # Find the trump suit
         if np.any(self.trump.values == 1):
             trump_suit_index = np.argmax(self.trump.values)
@@ -140,13 +140,21 @@ class BeloteEnv:
             trump_suit = "No"
             
         # Get player's cards
-        player_cards = self.deck[player]
-        game_round = 9 - len(player_cards)  # Belote has 8 rounds total (8 cards per player)
+        game_round = 9 - min([len(hand) for hand in self.deck.hands])
 
+        self.display_line()
         print()
-        print(f"Round: {game_round} | Player: {self.next_player} | Trump: {trump_suit}")
+        print(f"Round: {game_round} | Next: {self.next_player} | Trump: {trump_suit}")
+        print()
+
+    def display_hands(self, player=0):            
+        # Get player's cards
+        player_cards = self.deck[player]
+
+        self.display_line()
         print(f"Hands: {' '.join([f"{str(player_cards[i])}" for i in range(len(player_cards))])}")
         print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
+        print()
 
     def display_table(self, end=None):
         table_cards = []
@@ -171,6 +179,15 @@ class BeloteEnv:
         round_gain = self.round_scores[0]
         round_loss = self.round_scores[1]
 
-        win_or_lost = 'N-[0]' if round_gain > round_loss else 'N-[1]'
-        print(f"Total: Won {win_or_lost}, Total ({round_gain}, {round_loss})")
+        win_or_lost = '[0]' if round_gain > round_loss else '[1]'
+
+        self.display_line()
+        print()
+        print(f"Total: Winner is {win_or_lost}, Total ({round_gain}, {round_loss})")
+        print()
+        self.display_line()
+
+    
+    def display_line(self):
+        print("------------------------------------------")
 

@@ -18,7 +18,9 @@ def play(env, agents, history=None, display=False):
             agent = agents[current_player]
 
             if display and isinstance(agent, Human):
-                env.display_state(player=current_player)
+                env.display_state()
+                env.display_hands(player=current_player)
+
                 env.display_table(end=" ")
                 env.display_available_cards(player=current_player, end=" ")
             
@@ -66,6 +68,7 @@ def test(env, agents, history, display=False, ):
             agent = agents[current_player]
 
             if display:
+                env.display_hands(player=current_player)
                 env.display_table(end="")
                 env.display_available_cards(player=current_player, end="")
             
