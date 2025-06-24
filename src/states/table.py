@@ -90,7 +90,7 @@ class Table:
         
     def change_suits(self, transform):
         for i in range(self.index):
-            self.cards[i].change_suit(transform)
+            self.cards[i].change_suits(transform)
         
         return self
         

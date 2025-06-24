@@ -49,7 +49,7 @@ class Card:
         
         return False
     
-    def change_suit(self, transform):
+    def change_suits(self, transform):
         self.suit = transform(self.suit)
 
         return self

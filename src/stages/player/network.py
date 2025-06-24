@@ -12,17 +12,17 @@ class CNNBeloteNetwork(nn.Module):
         self.num_suits = 4  # Spades, Hearts, Diamonds, Clubs
         self.total_actions = self.num_ranks * self.num_suits  # 32 possible cards
         
-        # Card convolution for hand cards
-        self.card_conv = nn.Sequential(
-            nn.Conv3d(1, 16, kernel_size=(1, 1, 3), padding=(0, 0, 1)),
-            nn.ReLU(),
-            nn.Conv3d(16, 32, kernel_size=(1, 3, 1), padding=(0, 1, 0)),
-            nn.ReLU(),
-            nn.Conv3d(32, 64, kernel_size=(1, 3, 3), padding=(0, 1, 1)),
-            nn.ReLU(),
-            nn.Conv3d(64, 128, kernel_size=(3, 1, 1), padding=(1, 0, 0)),
-            nn.ReLU(),
-        )
+        # FIXED: 4 separate sequential layers for each player
+        self.player_convs = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(1, 16, kernel_size=(2, 3), padding=(0, 1)),
+                nn.ReLU(),
+                nn.Conv2d(16, 32, kernel_size=(2, 3), padding=(0, 1)),
+                nn.ReLU(),
+                nn.AdaptiveAvgPool2d((1, 4)),
+                nn.Flatten()
+            ) for _ in range(4)
+        ])
         
         # Multi-channel 2D convolution for table cards
         # Process all 3 cards at once as 3 channels
@@ -35,7 +35,8 @@ class CNNBeloteNetwork(nn.Module):
         )
         
         # Calculate the flattened size of the table features
-        self.table_feature_size = 32 * 8 * 4  # Size after Conv2d layers
+        # For input [batch, 3, 8, 4] -> Conv2d preserves H,W with padding=1 -> [batch, 32, 8, 4]
+        self.table_feature_size = 32 * 8 * 4  # 1024
         
         # Trump info embedding
         self.trump_embedding = nn.Sequential(
@@ -43,12 +44,13 @@ class CNNBeloteNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # Calculate flattened dimensions
-        self.card_flat_dim = 128 * 4 * 8 * 4  # Assuming 4 players, 8 ranks, 4 suits
+        # Calculate flattened dimensions based on actual conv output
+        # Each player conv outputs: 32 * 1 * 4 = 128, for 4 players = 512 total
+        self.player_flat_dim = 128 * 4  # 512
         
         # Feature processing
         self.shared_fc = nn.Sequential(
-            nn.Linear(self.card_flat_dim + self.table_feature_size + 32, 512),  # Hand + Table + Trump
+            nn.Linear(self.player_flat_dim + self.table_feature_size + 32, 512),  # Players + Table + Trump
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.ReLU()
@@ -71,22 +73,23 @@ class CNNBeloteNetwork(nn.Module):
         
         Args:
             action_type: Type of action defined in ./actions.py action type as int
-            probs_tensor: Tensor of probabilities [batch, 1, 4, 4, 8]
-            table_tensor: Tensor of table cards [batch, 3, 8, 4]
-            trump_tensor: Tensor of trump suit [batch, 4]
+            probs_tensor: Tensor of probabilities [batch, 4, 4, 8] - 4 players x suits x ranks
+            table_tensor: Tensor of table cards [batch, 3, 8, 4] - 3 cards x ranks x suits  
+            trump_tensor: Tensor of trump suit [batch, 4] - one-hot encoded suit
             
         Returns:
-            tuple: (policy, value) for card actions
+            tuple: (logits, value) for card actions
         """
         # Get features from the shared network
         features = self._extract_features(probs_tensor, table_tensor, trump_tensor)
         
         # Get policy and value for card actions
         if action_type == Action.TYPE_PLAY:
-            card_policy = F.softmax(self.card_policy(features), dim=-1)
+            # Return logits instead of softmax for proper masking in agent
+            card_logits = self.card_policy(features)
             card_value = self.card_value(features)
             
-            return card_policy, card_value
+            return card_logits, card_value
         
         # Future methods for other action types
         # ......
@@ -102,9 +105,17 @@ class CNNBeloteNetwork(nn.Module):
         # Get batch size from the input tensor
         batch_size = probs_tensor.size(0)
         
-        # Process through convolutional layers
-        probs_features = self.card_conv(probs_tensor)
-        probs_features = probs_features.view(batch_size, -1)  # Flatten
+        # Process each player separately through their own conv layers
+        player_features = []
+        for i in range(4):
+            # Extract single player data [batch, 1, 4, 8]
+            player_data = probs_tensor[:, i:i+1, :, :]
+            # Process through player-specific conv
+            player_feat = self.player_convs[i](player_data)
+            player_features.append(player_feat)
+        
+        # Concatenate all player features
+        probs_features = torch.cat(player_features, dim=1)
         
         # Process table cards
         table_features = self.table_conv(table_tensor)

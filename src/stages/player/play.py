@@ -23,6 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Play Belote against trained AI agents")
     parser.add_argument("--model-path", type=str, default=os.path.join(root, 'models', 'belote_agent_final.pt'), help="Model path for the agent")
     parser.add_argument("--mode", type=str, default='play', choices=['play', 'observe', 'record', 'replay', 'test'], help="Type of run: play, observe, record, replay, test")
+    parser.add_argument("--repeat", type=int, default=1, help="Repeat the game n times")
     parser.add_argument("--episodes", type=int, default=100, help="Number of episodes to play")
     parser.add_argument("--history-dir", type=str, default=history_dir, help="Histories root directory")
     parser.add_argument("--history-file", type=str, default="history-20250515-160742", help="History file name")
@@ -69,6 +70,11 @@ def get_history_files(history_dir):
 
     return files
 
+def initialize_agents(env, agents):
+    """Initialize all agents with their environment and position index"""
+    for i, agent in enumerate(agents):
+        agent.init(env, env_index=i)
+
 def fn_record(args):
     """"""
     env = create_env()
@@ -77,6 +83,9 @@ def fn_record(args):
     for i in range(0, 4):
         agent = load_human_agent(args.model_path)
         agents.append(agent)
+
+    # Initialize all agents with their environment index
+    initialize_agents(env, agents)
 
     history = History(env)
 
@@ -105,6 +114,10 @@ def fn_observe(args):
 
     while total < args.episodes:
         env = create_env()
+        
+        # Initialize all agents with their environment index
+        initialize_agents(env, agents)
+        
         history = History(env)
         
         gain, lose, _ = play(env, agents, history, display=False)  # Pass history object
@@ -139,6 +152,9 @@ def fn_test(args):
         history.load(history_path)
         env = history.load_env()
 
+        # Initialize all agents with their environment index
+        initialize_agents(env, agents)
+
         # Correct the call to test()
         _r, _t = test(env, agents, history)
 
@@ -151,6 +167,8 @@ def fn_test(args):
         accuracy = right_moves / total_moves
         accuracy_percent = round(accuracy * 100, 2)
         print(f"Overall accuracy: {accuracy_percent}% , {right_moves}/{total_moves}")
+
+        return accuracy
     else:
         print("No moves were tested.")
 
@@ -172,6 +190,9 @@ def fn_replay(args):
         agent = load_ai_agent(args.model_path)
         agents.append(agent)
 
+    # Initialize all agents with their environment index
+    initialize_agents(env, agents)
+
     print(f"Replaying game from history file: {args.history_file}")
     test(env, agents, history, display=True)
 
@@ -183,6 +204,9 @@ def fn_play(args):
     for i in range(0, 4):
         agent = load_human_agent(args.model_path) if i == 0 else load_ai_agent(args.model_path)
         agents.append(agent)
+
+    # Initialize all agents with their environment index
+    initialize_agents(env, agents)
 
     play(env, agents, display=True)
 
@@ -213,4 +237,13 @@ if __name__ == "__main__":
         
     # Testing all the recorded history
     if args.mode == 'test':
-        fn_test(args)
+        repeat_count = args.repeat
+        total_accuracy = 0
+
+        for i in range(0, repeat_count):
+            total_accuracy += fn_test(args)
+
+        if repeat_count > 1:
+            accuracy =  total_accuracy / repeat_count
+            accuracy_percent = round(accuracy * 100, 2)
+            print(f"Total {repeat_count} repetition accuracy: {accuracy_percent}%")
