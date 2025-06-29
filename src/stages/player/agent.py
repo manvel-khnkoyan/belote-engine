@@ -8,8 +8,9 @@ import os
 from src.stages.player.actions import Action
 from src.states.probability import Probability
 from src.stages.player.actions import ActionCardMove
-from src.canonical.suits_transformer import suits_canonical_transformer
+from src.canonical.suits_canonical_transformer import SuitsCanonicalTransformer
 from src.stages.player.actions import Action, ActionCardMove
+from src.deck import Deck
 
 class PPOAgent:
 
@@ -66,7 +67,7 @@ class PPOAgent:
             log_prob.item()
 
     def learn(self, batch):
-        # FIXED: Use dictionary access instead of attribute access
+        # Use dictionary access instead of attribute access
         returns = self._compute_returns(batch['rewards'])
         values_tensor = torch.tensor(batch['values'], device=self.device, dtype=torch.float32)
         advantages = returns - values_tensor
@@ -75,7 +76,7 @@ class PPOAgent:
         if advantages.std() > 1e-8:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # FIXED: Convert batch actions and log_probs to tensors
+        # Convert batch actions and log_probs to tensors
         actions_tensor = torch.tensor(batch['actions'], device=self.device, dtype=torch.long)
         old_log_probs = torch.tensor(batch['log_probs'], device=self.device, dtype=torch.float32)
 
@@ -93,7 +94,7 @@ class PPOAgent:
             new_policies.append(policy.squeeze())
             new_values.append(value.squeeze())
         
-        # FIXED: Stack tensors properly
+        # Stack tensors properly
         new_policies = torch.stack(new_policies)
         new_values = torch.stack(new_values)
             
@@ -146,29 +147,40 @@ class PPOBeloteAgent:
         self.log_probs = []
         self.rewards = []
 
-    def updated_rewards(self, reward_value, last_n=1):
-        for i in range(last_n):
-            idx = len(self.rewards) - 1 - i
-            if idx >= 0:
-                self.rewards[idx] += reward_value / (2 ** i)
-    
     def init(self, env, env_index=0, probability=None):
         # Store the environment index
         self.env_index = env_index
-        # Every Agent should have their own probability instance
-        self.probability = probability if probability else Probability()
-        # Set initial hand knowledge
-        for card in env.deck.hands[env_index]:
-            self.probability.update(0, card.suit, card.rank, 1)
+        
+        # Initialize Probability
+        self.init_probability(env, probability)
+
     
+    def init_probability(self, env, probability=None):
+        # Initialize the probability matrix for the agent    
+        self.probability = probability if probability else Probability()
+
+        # Reset My Hands Probability
+        for card in env.deck.hands[self.env_index]:
+            self.probability.update(0, card.suit, card.rank, 1)
+
+
+    def updated_rewards(self, reward_value, last_n=1, decay_factor=2):
+        for i in range(last_n):
+            idx = len(self.rewards) - 1 - i
+            if idx >= 0:
+                self.rewards[idx] += reward_value / (decay_factor ** i)
+
+
     def observe(self, player, action):
         # Every Agent observation is unique for themselves
         if isinstance(action, ActionCardMove):
-            self.probability.update(player, action.card.suit, action.card.rank, -1)    
+            self.probability.update(player, action.card.suit, action.card.rank, -1)
+
     
     def choose_action(self, env):
         # Get state representation
-        transform, _ = suits_canonical_transformer(self.probability) if self.probability else (None, None)
+        transformer = SuitsCanonicalTransformer(self.probability) if self.probability else None
+        transform = transformer.get_transform_function() if transformer else None
         
         # Get tensors (with error handling)
         probability_tensor = (self.probability.copy().change_suits(transform).to_tensor().unsqueeze(0))

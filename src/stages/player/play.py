@@ -131,7 +131,7 @@ def fn_test(args):
     """"""
     # Create agents
     agents = []
-    for i in range(0, 4):
+    for _ in range(0, 4):
         agent = load_ai_agent(args.model_path)
         agents.append(agent)
 

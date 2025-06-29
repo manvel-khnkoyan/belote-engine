@@ -12,12 +12,17 @@ class Deck:
         if player < 0 or player > 3:
             raise ValueError(f"Invalid player index: {player}. Must be between 0 and 3.")
         return self.hands[player]
+    
+    @staticmethod
+    def new_cards():
+        cards = []
+        for rank in range(8):
+            for suit in range(4):
+                cards.append(Card(suit, rank))
+        return cards
 
     def reset(self):
-        self.cards = []
-        for rank in range(8):  # 0-7 for ranks
-            for suit in range(4):  # 0-3 for suits
-                self.cards.append(Card(suit, rank))
+        self.cards = self.new_cards()
         random.shuffle(self.cards)
 
     def deal_cards(self, num_cards_per_player: int):

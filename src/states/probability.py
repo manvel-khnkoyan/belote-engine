@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 class Probability:
     """
     Represents the probability matrix state for Belote game.
@@ -16,34 +17,23 @@ class Probability:
     - Values between 0-1: Probability that player has this card
     """
     def __init__(self):
-        self.matrix = np.zeros((4, 4, 8), dtype=np.float32)
+        self.matrix = np.full((4, 4, 8), 0.25, dtype=np.float32)
 
-    def reset(self, deck, my_player_cards):
-        """Reset the probability matrix to all zeros."""
-        self.matrix = np.zeros((4, 4, 8), dtype=np.float32)
-
-        for player in range(4):
-            for (suit, rank) in deck:
-                if (suit, rank) in my_player_cards[0]:
-                    self.matrix[player, suit, rank] = 1 if player == 0 else 0
-                else:
-                    self.matrix[player, suit, rank] = 1/3
-
-    """
-    Update a player's probability for a card to an absolute value,
-    redistributing the difference proportionally among other players.
-    Handles negative probabilities while ensuring the sum of absolute values is 1.0.
-    
-    Args:
-        player: Player index (0-3)
-        suit: Suit index (0-3)
-        rank: Rank index (0-7)
-        absolute_value: New probability value for target player
-        
-    Returns:
-        success: Whether the update was successful
-    """
     def update(self, player, suit, rank, absolute_value):
+        """
+        Update a player's probability for a card to an absolute value,
+        redistributing the difference proportionally among other players.
+        Handles negative probabilities while ensuring the sum of absolute values is 1.0.
+        
+        Args:
+            player: Player index (0-3)
+            suit: Suit index (0-3)
+            rank: Rank index (0-7)
+            absolute_value: New probability value for target player
+            
+        Returns:
+            success: Whether the update was successful
+        """
         # Validate indices
         self._validate_indices(player, suit, rank)
         
@@ -56,7 +46,7 @@ class Probability:
             for p in range(4):
                 if p != player:
                     self.matrix[p, suit, rank] = 0.0
-            self.matrix[player, suit, rank] = round(absolute_value)
+            self.matrix[player, suit, rank] = float(np.round(absolute_value))
             return True
         
         # Get current values
@@ -70,71 +60,60 @@ class Probability:
             return True
         
         # Calculate sum of absolute probabilities of other players
-        abs_others_sum = 0
+        abs_others_sum = 0.0
         for p in range(4):
             if p != player:
                 abs_others_sum += abs(self.matrix[p, suit, rank])
                 
-        # If there's no absolute probability to redistribute, handle specially
-        if abs_others_sum < 1e-6 and difference != 0:
-            # Set target player to requested value
-            self.matrix[player, suit, rank] = absolute_value
-            
+        # Set target player to requested value first
+        self.matrix[player, suit, rank] = absolute_value
+        
+        # Calculate remaining probability for others
+        remaining_for_others = 1.0 - abs(absolute_value)
+        
+        # If there's no absolute probability to redistribute, distribute equally
+        if abs_others_sum < 1e-6:
             # Distribute remaining probability equally among others
-            remaining = 1.0 - abs(absolute_value)
-            per_player = remaining / 3
+            per_player = remaining_for_others / 3.0
             
             for p in range(4):
                 if p != player:
                     self.matrix[p, suit, rank] = per_player
             
             return True
-        
-        # Update the target player's probability
-        self.matrix[player, suit, rank] = absolute_value
-        
-        # Redistribute the difference among other players proportionally,
-        # preserving their signs
-        if abs_others_sum > 0:
-            for p in range(4):
-                if p != player:
-                    # Get sign of current value
-                    sign = 1 if self.matrix[p, suit, rank] >= 0 else -1
-                    
-                    # Calculate proportion of total absolute sum
-                    abs_value = abs(self.matrix[p, suit, rank])
-                    proportion = abs_value / abs_others_sum
-                    
-                    # Calculate new absolute value
-                    new_abs_value = abs_value - abs(difference) * proportion
-                    
-                    # Apply sign to new value
-                    self.matrix[p, suit, rank] = sign * new_abs_value
-        
-        # Ensure sum of absolute values equals 1.0
-        abs_total = sum(abs(self.matrix[p, suit, rank]) for p in range(4))
-        
-        if abs(abs_total - 1.0) > 1e-6 and abs_total > 0:
-            # Normalize all values to make absolute sum equal to 1
-            for p in range(4):
-                self.matrix[p, suit, rank] = self.matrix[p, suit, rank] / abs_total
+
+        # Redistribute proportionally among other players, preserving signs
+        for p in range(4):
+            if p != player:
+                # Get sign of current value
+                sign = 1.0 if self.matrix[p, suit, rank] >= 0 else -1.0
+                
+                # Calculate proportion of total absolute sum
+                abs_value = abs(self.matrix[p, suit, rank])
+                proportion = abs_value / abs_others_sum
+                
+                # Calculate new absolute value
+                new_abs_value = remaining_for_others * proportion
+                
+                # Apply sign to new value
+                self.matrix[p, suit, rank] = sign * new_abs_value
         
         return True
     
-    """
-    Extract a percentage from other players and add it to the target player.
-    Takes a percentage of the total probability of other players.
-    
-    Args:
-        player: Player index (0-3)
-        suit: Suit index (0-3)
-        rank: Rank index (0-7)
-        total_percentage_of_others: Percentage (0-1) of other players' total to extract
-        
-    Returns:
-        success: Whether the extraction was successful
-    """
     def extract(self, player, suit, rank, total_percentage_of_others):
+        """
+        Extract a percentage from other players and add it to the target player.
+        Takes a percentage of the total probability of other players.
+        
+        Args:
+            player: Player index (0-3)
+            suit: Suit index (0-3)
+            rank: Rank index (0-7)
+            total_percentage_of_others: Percentage (0-1) of other players' total to extract
+            
+        Returns:
+            success: Whether the extraction was successful
+        """
         # Validate indices
         self._validate_indices(player, suit, rank)
         
@@ -147,7 +126,7 @@ class Probability:
             return False  # Can't modify probabilities of played cards
         
         # Calculate total probability of other players
-        others_sum = 0
+        others_sum = 0.0
         for p in range(4):
             if p != player:
                 others_sum += self.matrix[p, suit, rank]
@@ -177,9 +156,10 @@ class Probability:
             raise ValueError(f"Invalid rank index: {rank}. Must be between 0 and 7")
         
     def to_tensor(self):
-        return torch.tensor(self.matrix, dtype=torch.float)
+        return torch.tensor(self.matrix, dtype=torch.float32)
     
-    def transform_matrix(self, player_step = 0, suit_step = 0, rank_step = 0):
+    def rotate(self, player_step=0, suit_step=0, rank_step=0):
+        """Rotate the matrix by shifting indices."""
         matrix = np.zeros((4, 4, 8), dtype=np.float32)
         
         for player in range(4):
@@ -191,30 +171,34 @@ class Probability:
                     matrix[new_player, new_suit, new_rank] = self.matrix[player, suit, rank]
         
         self.matrix = matrix
-        
         return self
     
-    def change_suits(self, transform):
+    def change_suits(self, transform_func):
+        """Transform suits using the provided transformation function."""
+        # Create a copy of the current matrix to read from
+        original_matrix = np.copy(self.matrix)
+        
+        # Apply transformation
         for player in range(4):
             for suit in range(4):
                 for rank in range(8):
-                    self.matrix[player, transform(suit), rank] = self.matrix[player, suit, rank]
+                    new_suit = transform_func(suit)
+                    self.matrix[player, new_suit, rank] = original_matrix[player, suit, rank]
         
         return self
 
     def copy(self):
+        """Create a deep copy of this Probability object."""
         new = Probability()
         new.matrix = np.copy(self.matrix)
-        
         return new
     
     def __getstate__(self):
-        # Convert NumPy array to a regular list for better compatibility
+        """Convert NumPy array to a regular list for better compatibility."""
         return {
             "matrix": self.matrix.tolist()
         }
     
     def __setstate__(self, state):
-        # Convert the list back to a NumPy array with the correct dtype
+        """Convert the list back to a NumPy array with the correct dtype."""
         self.matrix = np.array(state["matrix"], dtype=np.float32)
-        

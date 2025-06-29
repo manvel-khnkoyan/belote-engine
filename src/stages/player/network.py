@@ -12,17 +12,18 @@ class CNNBeloteNetwork(nn.Module):
         self.num_suits = 4  # Spades, Hearts, Diamonds, Clubs
         self.total_actions = self.num_ranks * self.num_suits  # 32 possible cards
         
-        # FIXED: 4 separate sequential layers for each player
-        self.player_convs = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(1, 16, kernel_size=(2, 3), padding=(0, 1)),
-                nn.ReLU(),
-                nn.Conv2d(16, 32, kernel_size=(2, 3), padding=(0, 1)),
-                nn.ReLU(),
-                nn.AdaptiveAvgPool2d((1, 4)),
-                nn.Flatten()
-            ) for _ in range(4)
-        ])
+        # Card convolution for hand cards
+        # Input will be reshaped from [batch, 4, 4, 8] to [batch, 1, 4, 4, 8] for Conv3d
+        self.card_conv = nn.Sequential(
+            nn.Conv3d(1, 16, kernel_size=(1, 1, 3), padding=(0, 0, 1)),
+            nn.ReLU(),
+            nn.Conv3d(16, 32, kernel_size=(1, 3, 1), padding=(0, 1, 0)),
+            nn.ReLU(),
+            nn.Conv3d(32, 64, kernel_size=(1, 3, 3), padding=(0, 1, 1)),
+            nn.ReLU(),
+            nn.Conv3d(64, 128, kernel_size=(3, 1, 1), padding=(1, 0, 0)),
+            nn.ReLU(),
+        )
         
         # Multi-channel 2D convolution for table cards
         # Process all 3 cards at once as 3 channels
@@ -45,12 +46,12 @@ class CNNBeloteNetwork(nn.Module):
         )
         
         # Calculate flattened dimensions based on actual conv output
-        # Each player conv outputs: 32 * 1 * 4 = 128, for 4 players = 512 total
-        self.player_flat_dim = 128 * 4  # 512
+        # After 3D convolutions: [batch, 128, 4, 4, 8] -> flattened: 128 * 4 * 4 * 8 = 16384
+        self.player_flat_dim = 128 * 4 * 4 * 8  # 16384 (corrected!)
         
         # Feature processing
         self.shared_fc = nn.Sequential(
-            nn.Linear(self.player_flat_dim + self.table_feature_size + 32, 512),  # Players + Table + Trump
+            nn.Linear(self.player_flat_dim + self.table_feature_size + 32, 512),  # 16384 + 1024 + 32 = 17440
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.ReLU()
@@ -105,17 +106,12 @@ class CNNBeloteNetwork(nn.Module):
         # Get batch size from the input tensor
         batch_size = probs_tensor.size(0)
         
-        # Process each player separately through their own conv layers
-        player_features = []
-        for i in range(4):
-            # Extract single player data [batch, 1, 4, 8]
-            player_data = probs_tensor[:, i:i+1, :, :]
-            # Process through player-specific conv
-            player_feat = self.player_convs[i](player_data)
-            player_features.append(player_feat)
+        # Reshape probs_tensor for 3D convolution: [batch, 4, 4, 8] -> [batch, 1, 4, 4, 8]
+        probs_tensor_3d = probs_tensor.unsqueeze(1)
         
-        # Concatenate all player features
-        probs_features = torch.cat(player_features, dim=1)
+        # Process each player separately through their own conv layers
+        probs_features = self.card_conv(probs_tensor_3d)
+        probs_features = probs_features.view(batch_size, -1)  # Flatten
         
         # Process table cards
         table_features = self.table_conv(table_tensor)
