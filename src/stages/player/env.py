@@ -10,7 +10,7 @@ import numpy as np
 from src.states.table import Table
 from src.card import Card
 from src.card import SUIT_SYMBOLS
-from src.stages.player.actions import Action, ActionCardMove
+from src.stages.player.actions import Action, ActionCardPlay
 
 class BeloteEnv:        
     def __init__(self, trump, deck, next_player=0):
@@ -75,7 +75,7 @@ class BeloteEnv:
         return self.deck[self.next_player]
     
     def step(self, action: Action):
-        if isinstance(action, ActionCardMove):
+        if isinstance(action, ActionCardPlay):
             # Play a card
             return self._play_card(action.card)
         

@@ -5,14 +5,11 @@ import time
 import torch
 from src.stages.player.env import BeloteEnv
 from src.stages.player.network import CNNBeloteNetwork
-from src.stages.player.agent import PPOBeloteAgent
-from src.stages.player.randomer import Randomer
-from src.states.table import Table
-from src.states.probability import Probability
+from src.stages.player.ppo.belote_agent import PPOBeloteAgent
+from src.stages.player.ppo.memory import PPOMemory
+from src.stages.player.helper_agents.randomer import Randomer
 from src.states.trump import Trump
-from src.card import Card
 from src.deck import Deck
-from src.stages.player.actions import ActionCardMove
 from simulation import play
 
 def parse_args():
@@ -35,27 +32,34 @@ def parse_args():
     parser.add_argument("--load-path", type=str, default=None, help="Path to load existing model")
     return parser.parse_args()
 
+def get_random_trump():
+    """Get a random trump suit for the game"""
+    trump = Trump()
+    trump.set_random_trump()
+    return trump
+
+def get_random_deck():
+    """Get a random deck of cards for the game"""
+    deck = Deck()
+    deck.reset()
+    deck.deal_cards(8)
+    return deck
+
 def train_agent(args):
     # Set random seed
     seed = int(time.time()) % 1000    
     
     # Initialize the neural network and agent
-    network = CNNBeloteNetwork()
-    agent = PPOBeloteAgent(
-        network=network,
-        training=True  # Set training to True for training mode
-    )
-    
+    agent = PPOBeloteAgent(CNNBeloteNetwork(), PPOMemory())
     # Load existing model if specified
     if args.load_path:
-        if agent.load(args.load_path):
-            print(f"Loaded model from {args.load_path}")
-        else:
-            print(f"Could not load model from {args.load_path}, starting fresh")
+        agent.load(args.load_path)
 
     # Create random agents for other players
     random_agents = [Randomer() for _ in range(3)]
     
+    deck = None
+    trump = None
     total_wins = 0
     
     # Training loop
@@ -65,13 +69,8 @@ def train_agent(args):
 
         # Play each game 4 consecutive times with the same deck
         if episode % 4 == 0:
-            trump = Trump()
-            trump.set_random_trump()
-            
-            deck = Deck()
-            deck.reset()
-            deck.deal_cards(8)
-
+            deck = get_random_deck()
+            trump = get_random_trump()
             next_player = int(np.random.default_rng(seed).integers(0, 4))
 
         # Setup the environment
@@ -83,6 +82,9 @@ def train_agent(args):
         # Initialize agent with environment
         agent.init(env, env_index=0)
         
+        # FIX 1: Store initial memory size to track new experiences
+        initial_memory_size = len(agent.memory)
+        
         # Use the play function from simulation.py to play the game
         team0_score, team1_score, _ = play(env, agents, history=None, display=args.display)
         
@@ -90,23 +92,23 @@ def train_agent(args):
         if team0_score > team1_score:
             total_wins += 1
         
-        # Update rewards for the agent's recent actions
-        final_reward = (team0_score - team1_score) / 100.0  # Normalize the reward
-        if len(agent.rewards) > 0:
-            # Apply reward to recent actions with decay
-            agent.updated_rewards(final_reward, last_n=min(8, len(agent.rewards)))
+        # FIX 2: Update rewards for the agent's recent actions properly
+        reward = (team0_score - team1_score) / 100.0  # Normalize the reward
+        new_experiences = len(agent.memory) - initial_memory_size
         
-        # Perform learning every update_interval episodes
-        if episode % args.update_interval == 0 and episode > 0 and len(agent.actions) > 0:
+        if new_experiences > 0:
+            # Apply reward to recent actions with decay
+            agent.memory.updated_last_rewards(reward, last_n=new_experiences)
+        
+        # FIX 3: Perform learning with proper conditions and frequency
+        if episode % args.update_interval == 0 and episode > 0 and len(agent.memory) >= args.batch_size:
             # Learn from experiences
             agent.learn(batch_size=args.batch_size)
-            
-            # Reset batch after learning
-            agent.reset_batch()
-
+            # Print progress
             print(f"Episode {episode}, Rounds Won: {total_wins}/{episode+1} "
                   f"({100*total_wins/(episode+1):.1f}%), "
-                  f"Score: {team0_score} vs {team1_score}")
+                  f"Score: {team0_score} vs {team1_score}, "
+                  f"Memory size: {len(agent.memory)}")
         
         # Save model at regular intervals
         if episode % args.save_interval == 0 and episode > 0:
@@ -121,8 +123,7 @@ def train_agent(args):
             print("=" * 40)
     
     # Final learning if there are remaining experiences
-    if len(agent.actions) > 0:
-        agent.learn(batch_size=args.batch_size)
+    agent.learn(batch_size=args.batch_size)
     
     # Save the final model
     final_path = os.path.join(args.save_path, "belote_agent_final.pt")
@@ -130,8 +131,7 @@ def train_agent(args):
     print(f"Training completed. Final model saved to {final_path}")
 
 def evaluate_agent(agent, random_agents, num_games=50):
-    """Evaluate the agent against random players"""
-    agent.training = False  # Set to evaluation mode
+    """Evaluate the agent against random players""" # Set to evaluation mode
     wins = 0
     total_score_diff = 0
     
@@ -162,11 +162,10 @@ def evaluate_agent(agent, random_agents, num_games=50):
     win_rate = wins / num_games
     avg_score_diff = total_score_diff / num_games
     
-    print(f"Evaluation Results:")
+    print("Evaluation Results:")
     print(f"  Win Rate: {win_rate:.3f} ({wins}/{num_games})")
     print(f"  Average Score Difference: {avg_score_diff:.2f}")
     
-    agent.training = True  # Set back to training mode
     return win_rate, avg_score_diff
 
 if __name__ == "__main__":

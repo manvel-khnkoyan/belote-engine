@@ -1,5 +1,5 @@
 import numpy as np
-from src.stages.player.actions import ActionCardMove
+from src.stages.player.actions import ActionCardPlay
 
 # Define
 class Randomer:
@@ -8,7 +8,7 @@ class Randomer:
         self.env_index = 0
         self.seed=1
 
-    def init(self, env, env_index=0):
+    def init(self, _, env_index=0):
         self.env_index = env_index
 
     def observe(self, player, action):
@@ -27,4 +27,4 @@ class Randomer:
         rng = np.random.default_rng(seed=self.seed)
         card = rng.choice(valid_cards)
         
-        return ActionCardMove(card)
+        return ActionCardPlay(card)

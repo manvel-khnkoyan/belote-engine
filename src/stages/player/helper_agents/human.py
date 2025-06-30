@@ -1,11 +1,10 @@
 
 from src.card import Card
-from src.stages.player.agent import PPOBeloteAgent
-from src.stages.player.actions import ActionCardMove
+from src.stages.player.ppo.belote_agent import PPOBeloteAgent
+from src.stages.player.actions import ActionCardPlay
 
 class Human(PPOBeloteAgent):
     def choose_action(self, env):
-        valid_cards = env.valid_cards()
         recomended_action = super().choose_action(env)
 
         recomended_action_index = None
@@ -13,7 +12,7 @@ class Human(PPOBeloteAgent):
             if card == recomended_action.card:
                 recomended_action_index = i
 
-        if isinstance(recomended_action, ActionCardMove):
+        if isinstance(recomended_action, ActionCardPlay):
             print(f"Recommended:{recomended_action.card} ({recomended_action_index + 1})", end=" ")
 
         # Get the selected card from the human player
@@ -34,7 +33,7 @@ class Human(PPOBeloteAgent):
             try:
                 choice = int(input())
                 if choice in card_map and card_map[choice] in valid_cards:
-                    return ActionCardMove(card_map[choice])
+                    return ActionCardPlay(card_map[choice])
                 else:
                     print("Invalid choice. Enter a number from your hand for a valid card: ", end="")
             except ValueError:

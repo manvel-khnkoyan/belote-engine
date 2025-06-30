@@ -3,8 +3,8 @@ import argparse
 import time
 import numpy as np
 from src.stages.player.network import CNNBeloteNetwork
-from src.stages.player.agent import PPOBeloteAgent
-from src.stages.player.human import Human
+from src.stages.player.ppo.belote_agent import PPOBeloteAgent
+from src.stages.player.helper_agents.human import Human
 from src.stages.player.history import History
 from src.deck import Deck
 from src.states.trump import Trump

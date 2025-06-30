@@ -1,13 +1,13 @@
 from src.card import Card
 
 class Action:
-    TYPE_PLAY = 0
-    TYPE_BELOTE = 1
-    TYPE_REBELOTE = 2
+    TYPE_CARD_PLAY = 0
+    TYPE_SAY_BELOTE = 1
+    TYPE_SAY_REBELOTE = 2
 
-class ActionCardMove(Action):
+class ActionCardPlay(Action):
     def __init__(self, card: Card):
-        self.type = Action.TYPE_PLAY
+        self.type = Action.TYPE_CARD_PLAY
         self.card = card
     
     def __eq__(self, action):

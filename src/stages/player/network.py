@@ -85,7 +85,7 @@ class CNNBeloteNetwork(nn.Module):
         features = self._extract_features(probs_tensor, table_tensor, trump_tensor)
         
         # Get policy and value for card actions
-        if action_type == Action.TYPE_PLAY:
+        if action_type == Action.TYPE_CARD_PLAY:
             # Return logits instead of softmax for proper masking in agent
             card_logits = self.card_policy(features)
             card_value = self.card_value(features)

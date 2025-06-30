@@ -1,4 +1,4 @@
-from src.stages.player.human import Human
+from src.stages.player.helper_agents.human import Human
 from src.stages.player.env import BeloteEnv
 
 def play(env, agents, history=None, display=False):
@@ -73,7 +73,7 @@ def test(env, agents, history, display=False, ):
                 env.display_available_cards(player=current_player, end="")
             
             # Get the valid cards for the current player
-            action, player = history.next_action()
+            action, _ = history.next_action()
             agent_action = agent.choose_action(env)
 
             if display:
