@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from src.deck import Deck
 
 class Probability:
     """
@@ -202,3 +203,15 @@ class Probability:
     def __setstate__(self, state):
         """Convert the list back to a NumPy array with the correct dtype."""
         self.matrix = np.array(state["matrix"], dtype=np.float32)
+
+    def display_status(self):
+        """Display the current state of the probability matrix."""
+        print("Probability Matrix:")
+        cards = Deck.new_cards()
+        for player in range(4):
+            print(f"Player {player}:", end=" ")
+            for card in cards:
+                prob = self.matrix[player, card.suit, card.rank]
+                print(f"{card}: {prob:.2f}", end="  ")
+            print()
+            print("-" * 50)

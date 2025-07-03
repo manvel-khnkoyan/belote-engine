@@ -2,6 +2,7 @@ import torch
 import time
 import numpy as np
 import os
+from src.deck import Deck
 from src.stages.player.actions import Action
 from src.states.probability import Probability
 from src.stages.player.actions import ActionCardPlay
@@ -30,9 +31,9 @@ class PPOBeloteAgent:
         self.probability = probability if probability else Probability()
 
         # Reset My Hands Probability
-        for card in env.deck.hands[self.env_index]:
-            self.probability.update(0, card.suit, card.rank, 1)
-
+        all_cards = Deck.new_cards()
+        for card in all_cards:
+            self.probability.update(0, card.suit, card.rank, 1 if card in env.deck.hands[self.env_index] else 0)
 
     def observe(self, player, action):
         # Every Agent observation is unique for themselves

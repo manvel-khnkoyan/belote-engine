@@ -1,10 +1,11 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, call
 import torch
 
 # Import the classes under test
 from src.stages.player.ppo.belote_agent import PPOBeloteAgent
 from src.stages.player.actions import ActionCardPlay
+from src.card import Card
 
 
 class PPOBeloteAgentTest(unittest.TestCase):
@@ -152,11 +153,9 @@ class PPOBeloteAgentTest(unittest.TestCase):
         mock_probability_class.return_value = mock_probability_instance
         
         # Create mock environment with cards
-        mock_card = Mock()
-        mock_card.suit = 1
-        mock_card.rank = 5
+        card = Card(1, 5)
         mock_env = Mock()
-        mock_env.deck.hands = {0: [mock_card]}
+        mock_env.deck.hands = {0: [card]}
         self.agent.env_index = 0
         
         # Initialize without provided probability
@@ -166,8 +165,19 @@ class PPOBeloteAgentTest(unittest.TestCase):
         mock_probability_class.assert_called_once()
         self.assertEqual(self.agent.probability, mock_probability_instance)
         
-        # Verify probability is updated for cards in hand
-        mock_probability_instance.update.assert_called_with(0, 1, 5, 1)
+        # Check that update was called multiple times (for all cards in deck)
+        assert mock_probability_instance.update.call_count == 32
+        
+        # Verify that the specific card in hand was updated correctly
+        calls_with_value_1 = [
+            call for call in mock_probability_instance.update.call_args_list
+            if call[0][0] == 0 and call[0][1] == card.suit and call[0][2] == card.rank and call[0][3] == 1
+        ]
+        
+        # Should have exactly one call with value=1 (the card in hand)
+        assert len(calls_with_value_1) == 1
+        # And it should be for our specific card
+        assert calls_with_value_1[0] == call(0, 1, 5, 1)
 
     def test_learn_without_memory_raises_error(self):
         """Test that learn method raises ValueError when memory is None."""
