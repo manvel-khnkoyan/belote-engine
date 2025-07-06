@@ -1,7 +1,8 @@
 from src.stages.player.helper_agents.human import Human
 from src.stages.player.env import BeloteEnv
+from src.stages.player.history import History
 
-def play(env, agents, history=None, display=False):
+def play(env, agents, recorder:History=None, display=False):
     # Main game loop
     round_ended = False
 
@@ -27,8 +28,8 @@ def play(env, agents, history=None, display=False):
             # Get the valid cards for the current player
             action = agent.choose_action(env)
 
-            if history is not None:
-                history.add_action(current_player, action)
+            if recorder is not None:
+                recorder.record_action(current_player, action)
 
             # Check if the action is valid
             _, trick_ended, round_ended = env.step(action)
@@ -43,14 +44,15 @@ def play(env, agents, history=None, display=False):
     if display:
         env.display_summary()
 
-    return env.round_scores[0], env.round_scores[1], history
+    return env.round_scores[0], env.round_scores[1]
 
-def test(env, agents, history, display=False, ):
+def test(env, agents, history:History, display=False, ):
     total_moves=0
     right_moves=0
 
     # Main game loop
     round_ended = False
+    history.reset()
 
     for i in range(4):
         agents[i].init(env, env_index=i)
@@ -73,7 +75,7 @@ def test(env, agents, history, display=False, ):
                 env.display_available_cards(player=current_player, end="")
             
             # Get the valid cards for the current player
-            action, _ = history.next_action()
+            action, _ = history.get_next_action()
             agent_action = agent.choose_action(env)
 
             if display:

@@ -77,15 +77,15 @@ class PPOAgent:
         batch_size = len(batch['action_types'])
         
         # Stack probabilities, tables, and trumps into batched tensors
-        probabilities_batch = torch.stack([batch['probabilities'][i] for i in range(batch_size)]).to(self.device)
-        tables_batch = torch.stack([batch['tables'][i] for i in range(batch_size)]).to(self.device)
-        trumps_batch = torch.stack([batch['trumps'][i] for i in range(batch_size)]).to(self.device)
+        probs_batch = torch.stack([batch['probabilities'][i] for i in range(batch_size)]).to(self.device)
+        table_batch = torch.stack([batch['tables'][i] for i in range(batch_size)]).to(self.device)
+        trump_batch = torch.stack([batch['trumps'][i] for i in range(batch_size)]).to(self.device)
         
         # Get action types (assuming they're all the same for this batch)
         action_type = batch['action_types'][0]  # Assuming homogeneous batch
         
         # Get new policies and values from the network for the batched states
-        new_policies, new_values = self.network(action_type, probabilities_batch, tables_batch, trumps_batch)
+        new_policies, new_values = self.network(action_type, probs_batch, table_batch, trump_batch)
         
         # Squeeze to remove unnecessary dimensions
         new_policies = new_policies.squeeze(1) if new_policies.dim() > 2 else new_policies

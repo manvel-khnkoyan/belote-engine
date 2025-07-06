@@ -23,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Play Belote against trained AI agents")
     parser.add_argument("--model-path", type=str, default=os.path.join(root, 'models', 'belote_agent_final.pt'), help="Model path for the agent")
     parser.add_argument("--mode", type=str, default='play', choices=['play', 'observe', 'record', 'replay', 'test'], help="Type of run: play, observe, record, replay, test")
-    parser.add_argument("--repeat", type=int, default=1, help="Repeat the game n times")
+    parser.add_argument("--repeat", type=int, default=100, help="Repeat the game n times")
     parser.add_argument("--episodes", type=int, default=100, help="Number of episodes to play")
     parser.add_argument("--history-dir", type=str, default=history_dir, help="Histories root directory")
     parser.add_argument("--history-file", type=str, default="history-20250515-160742", help="History file name")
@@ -80,16 +80,16 @@ def fn_record(args):
     env = create_env()
 
     agents = []
-    for i in range(0, 4):
+    for _ in range(0, 4):
         agent = load_human_agent(args.model_path)
         agents.append(agent)
 
     # Initialize all agents with their environment index
     initialize_agents(env, agents)
 
-    history = History(env)
+    history = History.create(env.trump, env.deck, env.next_player)
 
-    _, _, history = play(env, agents, history, display=True)
+    play(env, agents, history, display=True)
     
     # Ensure history directory exists
     if not os.path.exists(args.history_dir):
@@ -118,9 +118,9 @@ def fn_observe(args):
         # Initialize all agents with their environment index
         initialize_agents(env, agents)
         
-        history = History(env)
+        history = History.create(env.trump, env.deck, env.next_player)
         
-        gain, lose, _ = play(env, agents, history, display=False)  # Pass history object
+        gain, lose = play(env, agents, history, display=False)  # Pass history object
 
         total += 1
         total_wins += (gain > lose) * 1
@@ -143,34 +143,36 @@ def fn_test(args):
     if not history_files:
         print("No history files found. Cannot perform testing.")
         return
-        
-    print(f"Testing on {len(history_files)} history files...")
     
+    accuracies = []
     for history_file in history_files:
         history = History()
         history_path = os.path.join(args.history_dir, history_file)
         history.load(history_path)
-        env = history.load_env()
+        print(f"Testing on {history_path}")
 
-        # Initialize all agents with their environment index
-        initialize_agents(env, agents)
+        for _ in range(args.repeat):
+            
+            env = history.create_env() # Create a new environment from the history
+            history.reset()  # Reset history cursor for each replay
 
-        # Correct the call to test()
-        _r, _t = test(env, agents, history)
+            # Initialize all agents with their environment index
+            initialize_agents(env, agents)
 
-        right_moves += _r
-        total_moves += _t
-        
-        print(f"File: {history_file}, Correct moves: {_r}/{_t}")
+            # Correct the call to test()
+            _r, _t = test(env, agents, history)
 
-    if total_moves > 0:
-        accuracy = right_moves / total_moves
-        accuracy_percent = round(accuracy * 100, 2)
-        print(f"Overall accuracy: {accuracy_percent}% , {right_moves}/{total_moves}")
+            right_moves += _r
+            total_moves += _t
+            
+            print(f"Correct moves: {_r}/{_t}")
+            accuracy = right_moves / total_moves
+            accuracies.append(accuracy)
 
-        return accuracy
-    else:
-        print("No moves were tested.")
+    total_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0
+    accuracy_percent = round(total_accuracy * 100, 2)
+    print(f"Overall accuracy: {accuracy_percent}% , {right_moves}/{total_moves}")
+
 
 def fn_replay(args):
     """"""
@@ -180,8 +182,8 @@ def fn_replay(args):
         print(f"Error: History file {history_path} not found")
         return
     
-    history.load(history_path)
-    env = history.load_env()
+    env = history.create_env()
+    history.reset()
 
     print(f"Successfully loaded history from {history_path}")
 
@@ -237,13 +239,4 @@ if __name__ == "__main__":
         
     # Testing all the recorded history
     if args.mode == 'test':
-        repeat_count = args.repeat
-        total_accuracy = 0
-
-        for i in range(0, repeat_count):
-            total_accuracy += fn_test(args)
-
-        if repeat_count > 1:
-            accuracy =  total_accuracy / repeat_count
-            accuracy_percent = round(accuracy * 100, 2)
-            print(f"Total {repeat_count} repetition accuracy: {accuracy_percent}%")
+        fn_test(args)

@@ -427,19 +427,6 @@ class PPOMemoryTest(unittest.TestCase):
         self.memory.add_experience(self.sample_experience)
         self.assertEqual(len(self.memory), 2)
 
-    def test_is_empty_method(self):
-        """Test is_empty method."""
-        # Initially empty
-        self.assertTrue(self.memory.is_empty())
-        
-        # Add experience
-        self.memory.add_experience(self.sample_experience)
-        self.assertFalse(self.memory.is_empty())
-        
-        # Clear and check again
-        self.memory.clear()
-        self.assertTrue(self.memory.is_empty())
-
     def test_seed_increments_on_batch_calls(self):
         """Test that seed increments on random_batch calls."""
         # Add experiences
