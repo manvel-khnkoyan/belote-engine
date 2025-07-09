@@ -45,20 +45,17 @@ class BeloteEnv:
         # Get highest trump card on the table
         table_winner_card, _ = self.table.winner_card(self.trump)
         
+        # Get player's trump cards higher than the table's highest trump card
+        player_winner_cards = [card for card in self.deck[self.next_player] if card.higher_than(table_winner_card, self.trump)]
+
         # Check if player has cards of the lead suit
         player_table_lead_suit_cards = [card for card in self.deck[self.next_player] if card.suit == table_lead_suit]
-        
-        # Get current player's trump cards
-        player_trump_cards = [card for card in self.deck[self.next_player] if card.is_trump(self.trump)]
 
         ### When player has cards of the lead suit
         if len(player_table_lead_suit_cards) > 0:
             # When leading suit is trump
             if self.table[0].is_trump(self.trump):
-                # Get player's trump cards higher than the table's highest trump card
-                player_winner_cards = [card for card in player_trump_cards if card.higher_than(table_winner_card, self.trump)]
-
-                # If player has trump cards higher than current highest, they must play those
+                # If player has trump cards, that are higher than the table's highest trump card
                 if len(player_winner_cards) > 0:
                     return player_winner_cards
                     
@@ -67,9 +64,12 @@ class BeloteEnv:
 
         ### Player has no cards of the lead suit
 
-        # If player has trump cards, they must play a trump
-        if len(player_trump_cards) > 0:
-            return player_trump_cards
+        # and player has winner cards 
+        # This solves all the other cases, 
+        # 1) when i have to play trump
+        # 2) when i have to play card higher than the table's highest card
+        if len(player_winner_cards) > 0:
+            return player_winner_cards
                 
         # Player has no trump cards, they can play any card
         return self.deck[self.next_player]
