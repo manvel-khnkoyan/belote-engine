@@ -33,6 +33,7 @@ class Trump:
     
     def set_random_trump(self, allow_no_trump=False):
         self.clear()
+        return # Testing purposes, no random trump selection
 
         # Randomly select a suit index (0-3)
         rng = np.random.default_rng(None)
