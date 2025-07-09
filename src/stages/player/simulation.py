@@ -79,7 +79,7 @@ def test(env, agents, history:History, display=False, ):
             agent_action = agent.choose_action(env)
 
             if display:
-                print(action.card ,end="")
+                print(f" {action.card}" ,end="")
                 input()
 
             valid_cards = env.valid_cards()

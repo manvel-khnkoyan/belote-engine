@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from src.stages.player.actions import Action
 
-class CNNBeloteNetwork(nn.Module):
+class BeloteNetwork(nn.Module):
     def __init__(self):
-        super(CNNBeloteNetwork, self).__init__()
+        super(BeloteNetwork, self).__init__()
         
         # Constants for Belote
         self.num_ranks = 8  # 7, 8, 9, 10, J, Q, K, A
@@ -14,7 +14,7 @@ class CNNBeloteNetwork(nn.Module):
         
         # Input sizes
         self.probs_size = 4 * 4 * 8  # 128 - probabilities flattened
-        self.table_size = 3 * 8 * 4  # 96 - table cards flattened
+        self.table_size = 6  # 6 - table cards: 3 players × 2 values (suit, rank) each
         self.trump_size = 4  # 4 - trump one-hot
         
         # Process each component separately
@@ -25,7 +25,7 @@ class CNNBeloteNetwork(nn.Module):
         )
         
         self.table_processor = nn.Sequential(
-            nn.Linear(self.table_size, 32),
+            nn.Linear(self.table_size, 16),  # Reduced from 32 to 16 since input is much smaller
             nn.ReLU(),
             nn.Dropout(0.1)
         )
@@ -37,7 +37,7 @@ class CNNBeloteNetwork(nn.Module):
         
         # Combine processed features
         self.feature_combiner = nn.Sequential(
-            nn.Linear(64 + 32 + 16, 128),  # 112 -> 128
+            nn.Linear(64 + 16 + 16, 128),  # 96 -> 128
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(128, 64),
@@ -66,7 +66,7 @@ class CNNBeloteNetwork(nn.Module):
         Args:
             action_type: Type of action defined in ./actions.py action type as int
             probs_tensor: Tensor of probabilities [batch, 4, 4, 8] - 4 players x suits x ranks
-            table_tensor: Tensor of table cards [batch, 3, 8, 4] - 3 cards x ranks x suits  
+            table_tensor: Tensor of table cards [batch, 6] - 3 players × 2 values (suit, rank)
             trump_tensor: Tensor of trump suit [batch, 4] - one-hot encoded suit
             
         Returns:
@@ -92,22 +92,21 @@ class CNNBeloteNetwork(nn.Module):
     def _extract_features(self, probs_tensor, table_tensor, trump_tensor):
         """
         Extract features by processing each component separately with linear layers.
-        This replaces your 3D convolutions with more appropriate linear processing.
         """
         batch_size = probs_tensor.size(0)
         
-        # Flatten all inputs
+        # Flatten inputs (table_tensor is already flat with shape [batch, 6])
         probs_flat = probs_tensor.view(batch_size, -1)  # [batch, 128]
-        table_flat = table_tensor.view(batch_size, -1)  # [batch, 96]
+        table_flat = table_tensor.view(batch_size, -1)  # [batch, 6] - already flat
         trump_flat = trump_tensor.view(batch_size, -1)  # [batch, 4]
         
-        # Process each component separately (this replaces your 3D conv)
+        # Process each component separately
         prob_features = self.probs_processor(probs_flat)      # [batch, 64]
-        table_features = self.table_processor(table_flat)    # [batch, 32]
+        table_features = self.table_processor(table_flat)    # [batch, 16]
         trump_features = self.trump_processor(trump_flat)    # [batch, 16]
         
         # Combine processed features
-        combined = torch.cat([prob_features, table_features, trump_features], dim=1)  # [batch, 112]
+        combined = torch.cat([prob_features, table_features, trump_features], dim=1)  # [batch, 96]
         
         # Final feature combination
         features = self.feature_combiner(combined)  # [batch, 64]

@@ -2,7 +2,7 @@ import os
 import argparse
 import time
 import numpy as np
-from src.stages.player.network import CNNBeloteNetwork
+from src.stages.player.network import BeloteNetwork
 from src.stages.player.ppo.belote_agent import PPOBeloteAgent
 from src.stages.player.helper_agents.human import Human
 from src.stages.player.history import History
@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument("--repeat", type=int, default=100, help="Repeat the game n times")
     parser.add_argument("--episodes", type=int, default=100, help="Number of episodes to play")
     parser.add_argument("--history-dir", type=str, default=history_dir, help="Histories root directory")
-    parser.add_argument("--history-file", type=str, default="history-20250515-160742", help="History file name")
+    parser.add_argument("--history-file", type=str, default="history-20250705-152549", help="History file name")
     
     return parser.parse_args()
 
@@ -49,7 +49,7 @@ def create_env():
 
 def load_ai_agent(model_path):
     """"""
-    network = CNNBeloteNetwork()
+    network = BeloteNetwork()
     agent = PPOBeloteAgent(network=network)
     agent.load(model_path)
     
@@ -57,7 +57,7 @@ def load_ai_agent(model_path):
 
 def load_human_agent(model_path):
     """"""
-    network = CNNBeloteNetwork()
+    network = BeloteNetwork()
     agent = Human(network=network)
     agent.load(model_path)
     
@@ -178,17 +178,15 @@ def fn_replay(args):
     """"""
     history = History()
     history_path = os.path.join(args.history_dir, args.history_file)
-    if not os.path.exists(history_path):
-        print(f"Error: History file {history_path} not found")
-        return
+    history.load(history_path)
+    history.reset()
     
     env = history.create_env()
-    history.reset()
 
     print(f"Successfully loaded history from {history_path}")
 
     agents = []
-    for i in range(0, 4):
+    for _ in range(0, 4):
         agent = load_ai_agent(args.model_path)
         agents.append(agent)
 

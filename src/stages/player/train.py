@@ -4,7 +4,7 @@ import numpy as np
 import time
 import torch
 from src.stages.player.env import BeloteEnv
-from src.stages.player.network import CNNBeloteNetwork
+from src.stages.player.network import BeloteNetwork
 from src.stages.player.ppo.belote_agent import PPOBeloteAgent
 from src.stages.player.ppo.memory import PPOMemory
 from src.stages.player.helper_agents.randomer import Randomer
@@ -18,7 +18,7 @@ def parse_args():
     os.makedirs(save_path, exist_ok=True)
 
     parser = argparse.ArgumentParser(description="Train a Belote agent using improved PPO")
-    parser.add_argument("--episodes", type=int, default=100*64*10, help="Number of episodes to train")
+    parser.add_argument("--episodes", type=int, default=100*64, help="Number of episodes to train")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size for PPO updates")
     parser.add_argument("--save-path", type=str, default=save_path, help="Path to save models")
     parser.add_argument("--load-path", type=str, default=None, help="Path to load existing model")
@@ -42,7 +42,7 @@ def train_agent(args):
     seed = int(time.time()) % 1000    
     
     # Initialize the neural network and agent
-    agent = PPOBeloteAgent(CNNBeloteNetwork(), PPOMemory())
+    agent = PPOBeloteAgent(BeloteNetwork(), PPOMemory())
     # Load existing model if specified
     if args.load_path:
         agent.load(args.load_path)

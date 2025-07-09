@@ -72,19 +72,19 @@ class Table:
         return winner_card, winner_index
 
     def to_tensor(self):
-        # Create a tensor with 3 positions, each holding an 8×4 grid (rank × suit)
-        # This allows each card to be processed by a 2D convolutional network
-        tensor = torch.zeros(3, 8, 4)
+        # Initialize tensor with zeros
+        tensor = torch.zeros(6, dtype=torch.float32)
         
-        # Take the first 3 cards (or fewer if there are fewer)
+        # Fill in the first 3 cards (excluding the current player's card)
+        # We assume the current player is the 4th to play, so we take the first 3 cards
         end_idx = min(3, self.index)
+        
         for i in range(end_idx):
-            tensor_idx = i
             card = self.cards[i]
             if card is not None:
-                # Set 1.0 at the position corresponding to this card's rank and suit
-                # This creates a one-hot encoding in a 2D grid format
-                tensor[tensor_idx, card.rank, card.suit] = 1.0
+                # Each card takes 2 positions: suit and rank
+                tensor[i * 2] = float(card.suit)      # suit value
+                tensor[i * 2 + 1] = float(card.rank)  # rank value
         
         return tensor
         
