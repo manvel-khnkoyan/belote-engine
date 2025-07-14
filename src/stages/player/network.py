@@ -25,7 +25,8 @@ class BeloteNetwork(nn.Module):
         )
         
         self.table_processor = nn.Sequential(
-            nn.Linear(self.table_size, 16),  # Reduced from 32 to 16 since input is much smaller
+            # nn.Linear(self.table_size, 16),  # Reduced from 32 to 16 since input is much smaller
+            nn.Linear(self.table_size, 64),
             nn.ReLU(),
             nn.Dropout(0.1)
         )
@@ -79,7 +80,7 @@ class BeloteNetwork(nn.Module):
         if action_type == Action.TYPE_CARD_PLAY:
             # Return logits instead of softmax for proper masking in agent
             card_logits = self.card_policy(features)
-            card_value = self.card_value(features)
+            card_value  = self.card_value(features)
             
             return card_logits, card_value
         
@@ -101,14 +102,15 @@ class BeloteNetwork(nn.Module):
         trump_flat = trump_tensor.view(batch_size, -1)  # [batch, 4]
         
         # Process each component separately
-        prob_features = self.probs_processor(probs_flat)      # [batch, 64]
+        probs_features = self.probs_processor(probs_flat)    # [batch, 64]
         table_features = self.table_processor(table_flat)    # [batch, 16]
         trump_features = self.trump_processor(trump_flat)    # [batch, 16]
         
         # Combine processed features
-        combined = torch.cat([prob_features, table_features, trump_features], dim=1)  # [batch, 96]
+        combined = torch.cat([probs_features, table_features, trump_features], dim=1)  # [batch, 96]
         
         # Final feature combination
-        features = self.feature_combiner(combined)  # [batch, 64]
+        # features = self.feature_combiner(combined)  # [batch, 64]
+        features = table_features
         
         return features
