@@ -68,7 +68,8 @@ class PPOBeloteAgent:
             probability_tensor, 
             table_tensor, 
             trump_tensor, 
-            valid_indices
+            valid_indices,
+            training=True if self.memory else False,
         )
 
         # Memorize the experience

@@ -23,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Play Belote against trained AI agents")
     parser.add_argument("--model-path", type=str, default=os.path.join(root, 'models', 'belote_agent_final.pt'), help="Model path for the agent")
     parser.add_argument("--mode", type=str, default='play', choices=['play', 'observe', 'record', 'replay', 'test'], help="Type of run: play, observe, record, replay, test")
-    parser.add_argument("--repeat", type=int, default=100, help="Repeat the game n times")
+    parser.add_argument("--repeat", type=int, default=500, help="Repeat the game n times")
     parser.add_argument("--episodes", type=int, default=100, help="Number of episodes to play")
     parser.add_argument("--history-dir", type=str, default=history_dir, help="Histories root directory")
     parser.add_argument("--history-file", type=str, default="history-20250705-152549", help="History file name")

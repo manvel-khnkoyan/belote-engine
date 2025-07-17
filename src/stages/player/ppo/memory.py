@@ -3,7 +3,8 @@ import numpy as np
 
 
 class PPOMemory:
-    def __init__(self):
+    def __init__(self, max_size=10000):
+        self.max_size = max_size
         self.clear()
         self.seed = int(time.time() * 1000)
 
@@ -26,16 +27,16 @@ class PPOMemory:
         self.values.append(experience['value'])
         self.log_probs.append(experience['log_prob'])
         self.rewards.append(0.0)
-
+        
+        # Auto-trim if too large
+        if len(self.actions) > self.max_size:
+            self.cut_experience(self.max_size // 2)
 
     def cut_experience(self, keep_n_from_end):
         if keep_n_from_end <= 0 or len(self.actions) == 0:
             return
         
-        # Calculate the index to keep
         start_index = max(0, len(self.actions) - keep_n_from_end)
-
-        # Slice the memory lists to keep only the last `keep_n_from_end` entries
         self.action_types = self.action_types[start_index:]
         self.actions = self.actions[start_index:]
         self.probabilities = self.probabilities[start_index:]
@@ -49,10 +50,7 @@ class PPOMemory:
         if len(self.actions) == 0:
             return None
         
-        # Increment the seed to ensure randomness in sampling
         self.seed += 1
-
-        # Handle case where batch_size > available actions
         actual_batch_size = min(batch_size, len(self.actions))
         rng = np.random.default_rng(self.seed)
         indices = rng.choice(len(self.actions), size=actual_batch_size, replace=False)

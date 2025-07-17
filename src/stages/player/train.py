@@ -11,6 +11,7 @@ from src.stages.player.helper_agents.randomer import Randomer
 from src.states.trump import Trump
 from src.deck import Deck
 from simulation import play
+from src.stages.player.network_monitor import NetworkMonitor
 
 def parse_args():
     root = os.environ.get("PROJECT_ROOT")
@@ -18,7 +19,7 @@ def parse_args():
     os.makedirs(save_path, exist_ok=True)
 
     parser = argparse.ArgumentParser(description="Train a Belote agent using cyclic self-play PPO")
-    parser.add_argument("--episodes", type=int, default=100*64, help="Number of episodes per training session")
+    parser.add_argument("--episodes", type=int, default=50*64, help="Number of episodes per training session")
     parser.add_argument("--sessions", type=int, default=5, help="Number of training sessions/cycles")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size for PPO updates")
     parser.add_argument("--save-path", type=str, default=save_path, help="Path to save models")
@@ -49,55 +50,41 @@ def create_agents(model_path=None):
     # The first agent is our main training agent, others are opponents
     return agents[0], agents[1:]
 
-def train_session(main_agent, opponent_agents, episodes, batch_size, session_num):
-    """Train for one session with the given agents"""
+def train_session(main_agent, opponent_agents, episodes, batch_size, session_num, monitor):
+    """Optimized training session with better monitoring"""
     print(f"\n=== SESSION {session_num} ===")
-    print(f"Training agent type: {type(main_agent).__name__}")
-    print(f"Opponent agent types: {[type(agent).__name__ for agent in opponent_agents]}")
     
-    # Reset the main agent's memory for fresh experience collection
+    # Reset memory
     main_agent.memory = PPOMemory()
-    
-    # Set random seed
     seed = int(time.time()) % 1000 + session_num * 1000
-    
-    # Total wins counter for this session
     session_wins = 0
     
     print(f"Collecting experiences for {episodes} episodes...")
 
-    # Training loop for this session
+    # Episode collection loop
     for episode in range(episodes):
-        # Setup a new game environment
-        seed = seed + 1
-
-        # Play game with random deck and trump
+        seed += 1
         deck = get_random_deck()
         trump = get_random_trump()
         next_player = int(np.random.default_rng(seed).integers(0, 4))
-
-        # Setup the environment
         env = BeloteEnv(trump, deck, next_player=next_player)
         
-        # Setup all agents - the main PPO agent at position 0, opponents at other positions
         all_agents = [main_agent] + opponent_agents
-        
-        # Initialize all PPO agents with environment
         for i, agent in enumerate(all_agents):
-            if hasattr(agent, 'init'):  # PPO agents have init method
+            if hasattr(agent, 'init'):
                 agent.init(env, env_index=i)
         
-        # Use the play function from simulation.py to play the game
         team0_score, team1_score = play(env, all_agents)
-        
-        # Update wins count if team 0 (with our main agent) won
         session_wins += 1 if team0_score > team1_score else 0
 
-        # Update main agent's memory with the score difference
-        reward = (team0_score - team1_score) / (team0_score + team1_score)
-        main_agent.memory.updated_last_rewards(reward, last_n=1)
+        # Enhanced reward shaping
+        total_score = team0_score + team1_score
+        if total_score > 0:
+            reward = (team0_score - team1_score) / total_score
+            # More aggressive reward for chaotic environments
+            reward = reward * 2.0  # Amplify signal
+            main_agent.memory.updated_last_rewards(reward, last_n=2)
 
-        # Print progress occasionally
         if (episode + 1) % (episodes // 10) == 0:
             win_rate = 100 * session_wins / (episode + 1)
             print(f"  Episode {episode + 1}/{episodes}, Win rate: {win_rate:.1f}%")
@@ -106,9 +93,25 @@ def train_session(main_agent, opponent_agents, episodes, batch_size, session_num
     print(f"Session {session_num} completed: {session_wins}/{episodes} wins ({session_win_rate:.1f}%)")
     
     print("Learning from collected experiences...")
-    # Learn from experiences
-    for _ in range(round(episodes / batch_size)):
-        main_agent.learn(batch_size=batch_size)
+    
+    # Enhanced learning loop with monitoring
+    total_updates = round(episodes / batch_size)
+    recent_stats = []
+    
+    for step in range(total_updates):
+        stats = main_agent.learn(batch_size=batch_size)
+        if stats:
+            recent_stats.append(stats)
+        
+        # Print progress every 10 updates
+        if (step + 1) % 10 == 0 and recent_stats:
+            avg_entropy = np.mean([s.get('entropy', 0) for s in recent_stats[-10:]])
+            avg_kl = np.mean([s.get('kl_divergence', 0) for s in recent_stats[-10:]])
+            print(f"    Update {step + 1}/{total_updates} - Entropy: {avg_entropy:.3f}, KL: {avg_kl:.4f}")
+    
+    # Final stats summary
+    if recent_stats:
+        print(f"    Final - Avg Entropy: {np.mean([s.get('entropy', 0) for s in recent_stats]):.3f}")
     
     return session_win_rate
 
@@ -119,6 +122,9 @@ def train(args):
     print(f"  Episodes per session: {args.episodes}")
     print(f"  Batch size: {args.batch_size}")
     print(f"  Save path: {args.save_path}")
+    
+    # Create network monitor
+    monitor = NetworkMonitor()
     
     # Track progress across sessions
     session_win_rates = []
@@ -138,7 +144,8 @@ def train(args):
             opponent_agents, 
             args.episodes, 
             args.batch_size, 
-            session
+            session,
+            monitor
         )
         session_win_rates.append(win_rate)
         
