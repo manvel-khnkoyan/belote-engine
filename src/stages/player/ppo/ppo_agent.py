@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import numpy as np
 
 class PPOAgent:
-    def __init__(self, network, lr=3e-4, gamma=0.85, gae_lambda=0.8, clip=0.2, 
+    def __init__(self, network, lr=3e-4, gamma=0.9, gae_lambda=0.8, clip=0.2, 
                  entropy_coef=0.02, max_grad_norm=0.5, weight_decay=1e-4, 
                  ppo_epochs=3, value_loss_coef=0.5, kl_threshold=0.01):
         self.network = network
@@ -85,64 +85,18 @@ class PPOAgent:
             'entropy': dist.entropy().item()
         }
 
-    def learn(self, batch):
-        """Enhanced learning with multiple epochs and early stopping"""
-        self.update_count += 1
-        
-        # Store old policy for KL monitoring
-        with torch.no_grad():
-            batch_size = len(batch['action_types'])
-            probs_batch = torch.stack([batch['probabilities'][i] for i in range(batch_size)]).to(self.device)
-            table_batch = torch.stack([batch['tables'][i] for i in range(batch_size)]).to(self.device)
-            trump_batch = torch.stack([batch['trumps'][i] for i in range(batch_size)]).to(self.device)
-            action_type = batch['action_types'][0]
-            
-            old_policies, _ = self.network(action_type, probs_batch, table_batch, trump_batch)
-            old_policies = old_policies.squeeze(1) if old_policies.dim() > 2 else old_policies
-        
-        # Multiple epochs with enhanced early stopping
-        epochs_completed = 0
-        for epoch in range(self.ppo_epochs):
-            stats = self._update_epoch(batch)
-            epochs_completed = epoch + 1
-            
-            # Store stats for monitoring
-            for key, value in stats.items():
-                self.training_stats[key].append(value)
-            
-            # Enhanced early stopping with diagnostic information
-            if len(self.training_stats['kl_divergence']) > 0:
-                recent_kl = np.mean(self.training_stats['kl_divergence'][-10:])
-                if recent_kl > self.kl_threshold:
-                    self.training_stats['early_stops'] += 1
-                    print(f"[Update {self.update_count}] Early stopping at epoch {epoch} due to high KL divergence: {recent_kl:.4f}")
-                    print(f"  - Total early stops so far: {self.training_stats['early_stops']}")
-                    print(f"  - Recent entropy: {np.mean(self.training_stats['entropy'][-5:]):.4f}")
-                    print(f"  - Recent clipfrac: {np.mean(self.training_stats['clipfrac'][-5:]):.4f}")
-                    break
-        
-        # Diagnostic information every 50 updates
-        if self.update_count % 50 == 0:
-            self.print_diagnostics()
-        
-        # Store summary stats
-        self.last_stats = {
-            'epochs_completed': epochs_completed,
-            'recent_kl': np.mean(self.training_stats['kl_divergence'][-5:]) if self.training_stats['kl_divergence'] else 0,
-            'recent_entropy': np.mean(self.training_stats['entropy'][-5:]) if self.training_stats['entropy'] else 0,
-            'early_stops_total': self.training_stats['early_stops']
-        }
-        
-        return self.last_stats
-
-    def _update_epoch(self, batch):
-        """Single epoch update"""
+    def _update_epoch(self, batch, old_policies=None):
+        """Single epoch update with proper KL calculation"""
         advantages, returns = self._compute_gae(batch['rewards'], batch['values'])
+        
+        # Debug: Check advantage statistics
+        print(f"    Advantages - Mean: {advantages.mean():.6f}, Std: {advantages.std():.6f}")
+        print(f"    Returns - Mean: {returns.mean():.6f}, Std: {returns.std():.6f}")
         
         # Robust normalization
         if advantages.std() > 1e-8:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
+        
         batch_size = len(batch['action_types'])
         actions_tensor = torch.tensor(batch['actions'], device=self.device, dtype=torch.long)
         old_log_probs = torch.tensor(batch['log_probs'], device=self.device, dtype=torch.float32)
@@ -163,6 +117,10 @@ class PPOAgent:
         
         # PPO loss
         ratios = torch.exp(new_log_probs - old_log_probs)
+        
+        # Debug: Check ratio statistics
+        print(f"    Ratios - Min: {ratios.min():.4f}, Max: {ratios.max():.4f}, Mean: {ratios.mean():.4f}")
+        
         surr1 = ratios * advantages
         surr2 = torch.clamp(ratios, 1-self.clip, 1+self.clip) * advantages
 
@@ -172,18 +130,38 @@ class PPOAgent:
         
         loss = policy_loss + self.value_loss_coef * value_loss + entropy_loss
         
+        # Debug: Check gradients before update
+        total_grad_norm_before = 0
+        for param in self.network.parameters():
+            if param.grad is not None:
+                total_grad_norm_before += param.grad.data.norm(2).item() ** 2
+        total_grad_norm_before = total_grad_norm_before ** 0.5
+        
         # Update
         self.optimizer.zero_grad()
         loss.backward()
+        
+        # Check gradients after backward
+        total_grad_norm_after = 0
+        for param in self.network.parameters():
+            if param.grad is not None:
+                total_grad_norm_after += param.grad.data.norm(2).item() ** 2
+        total_grad_norm_after = total_grad_norm_after ** 0.5
+        
+        print(f"    Grad Norm: {total_grad_norm_after:.6f}")
+        
         torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.max_grad_norm)
         self.optimizer.step()
         
-        # Calculate monitoring stats
+        # FIXED: Proper KL calculation using old policies stored before epochs
         with torch.no_grad():
-            kl_div = torch.distributions.kl.kl_divergence(
-                torch.distributions.Categorical(F.softmax(new_policies.detach(), dim=-1)),
-                dists
-            ).mean()
+            if old_policies is not None:
+                old_policy_dist = torch.distributions.Categorical(F.softmax(old_policies, dim=-1))
+                new_policy_dist = torch.distributions.Categorical(F.softmax(new_policies.detach(), dim=-1))
+                kl_div = torch.distributions.kl.kl_divergence(old_policy_dist, new_policy_dist).mean()
+            else:
+                kl_div = torch.tensor(0.0)
+            
             clipfrac = ((ratios > (1 + self.clip)) | (ratios < (1 - self.clip))).float().mean()
         
         self.last_stats = {
@@ -191,9 +169,66 @@ class PPOAgent:
             'value_loss': value_loss.item(),
             'entropy': entropy.item(),
             'kl_divergence': kl_div.item(),
-            'clipfrac': clipfrac.item()
+            'clipfrac': clipfrac.item(),
+            'grad_norm': total_grad_norm_after,
+            'advantages_mean': advantages.mean().item(),
+            'advantages_std': advantages.std().item()
         }
         
+        return self.last_stats
+
+    def learn(self, batch):
+        """Enhanced learning with multiple epochs and early stopping"""
+        self.update_count += 1
+        
+        # Store old policy ONCE before all epochs
+        with torch.no_grad():
+            batch_size = len(batch['action_types'])
+            probs_batch = torch.stack([batch['probabilities'][i] for i in range(batch_size)]).to(self.device)
+            table_batch = torch.stack([batch['tables'][i] for i in range(batch_size)]).to(self.device)
+            trump_batch = torch.stack([batch['trumps'][i] for i in range(batch_size)]).to(self.device)
+            action_type = batch['action_types'][0]
+            
+            old_policies, _ = self.network(action_type, probs_batch, table_batch, trump_batch)
+            old_policies = old_policies.squeeze(1) if old_policies.dim() > 2 else old_policies
+        
+        print(f"\n--- Learning Update {self.update_count} ---")
+        print(f"Batch size: {batch_size}")
+        print(f"Unique rewards in batch: {len(set(batch['rewards']))}")
+        print(f"Reward range: [{min(batch['rewards']):.4f}, {max(batch['rewards']):.4f}]")
+        
+        # Multiple epochs with enhanced early stopping
+        epochs_completed = 0
+        for epoch in range(self.ppo_epochs):
+            print(f"  Epoch {epoch + 1}/{self.ppo_epochs}:")
+            stats = self._update_epoch(batch, old_policies)
+            epochs_completed = epoch + 1
+            
+            # Store stats for monitoring
+            for key, value in stats.items():
+                if key in self.training_stats:
+                    self.training_stats[key].append(value)
+            
+            # Enhanced early stopping with diagnostic information
+            if len(self.training_stats['kl_divergence']) > 0:
+                recent_kl = np.mean(self.training_stats['kl_divergence'][-3:])  # Last 3 updates
+                if recent_kl > self.kl_threshold:
+                    self.training_stats['early_stops'] += 1
+                    print(f"    [EARLY STOP] KL too high: {recent_kl:.6f}")
+                    break
+        
+        # Diagnostic information every 10 updates (more frequent)
+        if self.update_count % 10 == 0:
+            self.print_diagnostics()
+        
+        # Store summary stats
+        self.last_stats = {
+            'epochs_completed': epochs_completed,
+            'recent_kl': np.mean(self.training_stats['kl_divergence'][-5:]) if self.training_stats['kl_divergence'] else 0,
+            'recent_entropy': np.mean(self.training_stats['entropy'][-5:]) if self.training_stats['entropy'] else 0,
+            'early_stops_total': self.training_stats['early_stops']
+        }
+    
         return self.last_stats
     
     def _compute_gae(self, rewards, values):

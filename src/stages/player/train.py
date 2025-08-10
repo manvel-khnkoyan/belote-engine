@@ -10,7 +10,7 @@ from src.stages.player.ppo.memory import PPOMemory
 from src.stages.player.helper_agents.randomer import Randomer
 from src.states.trump import Trump
 from src.deck import Deck
-from simulation import play
+from stages.player.simulator import play
 from src.stages.player.network_monitor import NetworkMonitor
 
 def parse_args():

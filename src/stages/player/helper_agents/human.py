@@ -17,6 +17,7 @@ class Human(PPOBeloteAgent):
 
         # Get the selected card from the human player
         action = self._get_selected_actions(env)
+        print()
         
         return action
 

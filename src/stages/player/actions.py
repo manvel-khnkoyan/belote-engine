@@ -23,3 +23,6 @@ class ActionCardPlay(Action):
         self.type = state["type"]
         self.card = state["card"]
 
+    def __repr__(self):
+        return f"Play({self.card})"
+

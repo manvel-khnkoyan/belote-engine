@@ -7,7 +7,6 @@ from src.stages.player.ppo.belote_agent import PPOBeloteAgent
 from src.stages.player.actions import ActionCardPlay
 from src.card import Card
 
-
 class PPOBeloteAgentTest(unittest.TestCase):
     
     def setUp(self):

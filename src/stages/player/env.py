@@ -18,15 +18,17 @@ class BeloteEnv:
         self.deck = deck
         self.trump = trump
         self.table = Table()
+        self.trick = 0
 
         # Game state
         self.next_player = next_player
-        self.round_scores = [0, 0] # i % 2
+        self.total_scores = [0, 0] # i % 2
         self.trick_scores = [0, 0] # i % 2
 
         self.reset_trick()
 
     def reset_trick(self):
+        self.trick = 9 - len(self.deck[self.next_player])
         self.trick_scores = [0, 0] # i % 2
         self.table.clear()
 
@@ -123,7 +125,7 @@ class BeloteEnv:
 
         # Update the scores for the winning team
         self.trick_scores[self.next_player % 2] = trick_points
-        self.round_scores[self.next_player % 2] += trick_points
+        self.total_scores[self.next_player % 2] += trick_points
 
     def _trick_points(self):
         # last trick has a bonus
@@ -138,13 +140,10 @@ class BeloteEnv:
             trump_suit = SUIT_SYMBOLS[trump_suit_index]
         else:
             trump_suit = "No"
-            
-        # Get player's cards
-        game_round = 9 - min([len(hand) for hand in self.deck.hands])
 
         self.display_line()
         print()
-        print(f"Round: {game_round} | Next: {self.next_player} | Trump: {trump_suit}")
+        print(f"Trick: {self.trick} | Next: {self.next_player + 1} | Trump: {trump_suit}")
         print()
 
     def display_hands(self, player=0):            
@@ -153,8 +152,7 @@ class BeloteEnv:
 
         self.display_line()
         print(f"Hands: {' '.join([f"{str(player_cards[i])}" for i in range(len(player_cards))])}")
-        print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
-        print()
+        #print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
 
     def display_table(self, end=None):
         table_cards = []
@@ -176,8 +174,8 @@ class BeloteEnv:
         print(f"[{','.join(available_cards_indices)}]", end=end)
 
     def display_summary(self):
-        round_gain = self.round_scores[0]
-        round_loss = self.round_scores[1]
+        round_gain = self.total_scores[0]
+        round_loss = self.total_scores[1]
 
         win_or_lost = '[0]' if round_gain > round_loss else '[1]'
 

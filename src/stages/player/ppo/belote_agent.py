@@ -8,7 +8,7 @@ from src.states.probability import Probability
 from src.stages.player.actions import ActionCardPlay
 from src.canonical.suits_canonical_transformer import SuitsCanonicalTransformer
 from src.stages.player.actions import Action, ActionCardPlay
-from src.stages.player.ppo.agent import PPOAgent
+from src.stages.player.ppo.ppo_agent import PPOAgent
 from src.stages.player.ppo.memory import PPOMemory
 
 class PPOBeloteAgent:
