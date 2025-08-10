@@ -141,7 +141,7 @@ class BeloteEnv:
         else:
             trump_suit = "No"
 
-        self.display_line()
+        self.display_hash()
         print()
         print(f"Trick: {self.trick} | Next: {self.next_player + 1} | Trump: {trump_suit}")
         print()
@@ -150,11 +150,11 @@ class BeloteEnv:
         # Get player's cards
         player_cards = self.deck[player]
 
-        self.display_line()
+        
         print(f"Hands: {' '.join([f"{str(player_cards[i])}" for i in range(len(player_cards))])}")
         #print(f"Index: {''.join([f" {i + 1}  " for i in range(len(player_cards))])}")
 
-    def display_table(self, end=None):
+    def display_table(self):
         table_cards = []
         for card in self.table.cards:
             if card is not None:
@@ -165,13 +165,7 @@ class BeloteEnv:
         while len(table_cards) < 4:
             table_cards.append(" . ")
         
-        print(f"Table: {" ".join(table_cards)}", end=end)
-
-    def display_available_cards(self, player, end=None):
-        available_cards = self.valid_cards()
-        available_cards_indices = [str(i + 1) for i, card in enumerate(self.deck[player]) if card in available_cards]
-
-        print(f"[{','.join(available_cards_indices)}]", end=end)
+        print(f"Table: {" ".join(table_cards)}")
 
     def display_summary(self):
         round_gain = self.total_scores[0]
@@ -179,13 +173,16 @@ class BeloteEnv:
 
         win_or_lost = '[0]' if round_gain > round_loss else '[1]'
 
-        self.display_line()
+        self.display_hash()
         print()
         print(f"Total: Winner is {win_or_lost}, Total ({round_gain}, {round_loss})")
         print()
-        self.display_line()
+        self.display_hash()
 
     
     def display_line(self):
         print("------------------------------------------")
+        
+    def display_hash(self):
+        print("##########################################")
 

@@ -58,11 +58,12 @@ def simulate(env, agents, action_selector=None, display=False, on_trick_end=None
 def show_game_state(env, player, display):
     if display == True or (display == player and type(display) is int):
         """Display the current game state for a player"""
-        env.display_line()
         env.display_state()
+        env.display_line()
+        env.display_table()
+        env.display_line()
         env.display_hands(player=player)
-        env.display_table(end=" ")
-        env.display_available_cards(player=player, end=" " if type(display) is int else None)
+        
 
 def show_trick_result(env, display):
     """Display the completed trick"""

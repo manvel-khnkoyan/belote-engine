@@ -25,8 +25,8 @@ class BeloteNetwork(nn.Module):
         )
         
         self.table_processor = nn.Sequential(
-            # nn.Linear(self.table_size, 16), 
-            nn.Linear(self.table_size, 64),
+            nn.Linear(self.table_size, 16), 
+            # nn.Linear(self.table_size, 64),
             nn.ReLU(),
             nn.Dropout(0.1)
         )
@@ -105,8 +105,6 @@ class BeloteNetwork(nn.Module):
         probs_features = self.probs_processor(probs_flat)    # [batch, 64]
         table_features = self.table_processor(table_flat)    # [batch, 16]
         trump_features = self.trump_processor(trump_flat)    # [batch, 16]
-
-        return table_features
         
         # Combine processed features
         combined = torch.cat([probs_features, table_features, trump_features], dim=1)  # [batch, 96]

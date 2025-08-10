@@ -10,7 +10,7 @@ from src.stages.player.ppo.memory import PPOMemory
 from src.stages.player.helper_agents.randomer import Randomer
 from src.states.trump import Trump
 from src.deck import Deck
-from stages.player.simulator import play
+from src.stages.player.simulator import simulate
 from src.stages.player.network_monitor import NetworkMonitor
 
 def parse_args():
@@ -70,11 +70,12 @@ def train_session(main_agent, opponent_agents, episodes, batch_size, session_num
         env = BeloteEnv(trump, deck, next_player=next_player)
         
         all_agents = [main_agent] + opponent_agents
-        for i, agent in enumerate(all_agents):
-            if hasattr(agent, 'init'):
-                agent.init(env, env_index=i)
         
-        team0_score, team1_score = play(env, all_agents)
+        # Use simulate function instead of play
+        simulate(env, all_agents, display=False)
+        
+        # Get scores from environment after simulation
+        team0_score, team1_score = env.total_scores[0], env.total_scores[1]
         session_wins += 1 if team0_score > team1_score else 0
 
         # Enhanced reward shaping
