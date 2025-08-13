@@ -11,9 +11,9 @@ import torch.nn.functional as F
 import numpy as np
 
 class PPOAgent:
-    def __init__(self, network, lr=3e-4, gamma=0.9, gae_lambda=0.8, clip=0.2, 
-                 entropy_coef=0.02, max_grad_norm=0.5, weight_decay=1e-4, 
-                 ppo_epochs=3, value_loss_coef=0.5, kl_threshold=0.01):
+    def __init__(self, network, lr=3e-4, gamma=0.97, gae_lambda=0.95, clip=0.2, 
+                 entropy_coef=0.08, max_grad_norm=0.5, weight_decay=1e-4, 
+                 ppo_epochs=3, value_loss_coef=0.5, kl_threshold=0.025):
         self.network = network
         self.optimizer = optim.Adam(network.parameters(), lr=lr, weight_decay=weight_decay)
         
@@ -192,10 +192,6 @@ class PPOAgent:
             old_policies, _ = self.network(action_type, probs_batch, table_batch, trump_batch)
             old_policies = old_policies.squeeze(1) if old_policies.dim() > 2 else old_policies
         
-        print(f"\n--- Learning Update {self.update_count} ---")
-        print(f"Batch size: {batch_size}")
-        print(f"Unique rewards in batch: {len(set(batch['rewards']))}")
-        print(f"Reward range: [{min(batch['rewards']):.4f}, {max(batch['rewards']):.4f}]")
         
         # Multiple epochs with enhanced early stopping
         epochs_completed = 0
@@ -232,23 +228,51 @@ class PPOAgent:
         return self.last_stats
     
     def _compute_gae(self, rewards, values):
-        """Enhanced GAE for chaotic environments"""
+        """
+        Compute Generalized Advantage Estimation (GAE).
+        
+        GAE formula:
+        δₜ = rₜ + γVₜ₊₁ - Vₜ
+        Aₜ = δₜ + (γλ)δₜ₊₁ + (γλ)²δₜ₊₂ + ...
+        
+        Args:
+            rewards: List of rewards for each timestep
+            values: List of value estimates for each timestep
+        
+        Returns:
+            advantages: GAE advantages for each timestep
+            returns: Value targets (advantages + values)
+        """
         if len(rewards) == 0:
             return torch.tensor([], device=self.device), torch.tensor([], device=self.device)
         
+        # Convert to tensors
         rewards = torch.tensor(rewards, device=self.device, dtype=torch.float32)
         values = torch.tensor(values, device=self.device, dtype=torch.float32)
         
-        next_values = torch.cat([values[1:], torch.zeros(1, device=self.device)])
-        deltas = rewards + self.gamma * next_values - values
+        # Initialize advantages tensor
+        advantages = torch.zeros_like(rewards)
         
-        advantages = []
-        gae = 0
-        for i in reversed(range(len(rewards))):
-            gae = deltas[i] + self.gamma * self.gae_lambda * gae
-            advantages.insert(0, gae)
+        # GAE calculation - work backwards through time
+        running_gae = 0.0
         
-        advantages = torch.tensor(advantages, device=self.device, dtype=torch.float32)
+        for t in reversed(range(len(rewards))):
+            # Calculate next value (0 for terminal state)
+            if t == len(rewards) - 1:
+                next_value = 0.0  # Terminal state has no next value
+            else:
+                next_value = values[t + 1]
+            
+            # Calculate TD error: δₜ = rₜ + γVₜ₊₁ - Vₜ
+            delta = rewards[t] + self.gamma * next_value - values[t]
+            
+            # Update running GAE: Aₜ = δₜ + γλAₜ₊₁
+            running_gae = delta + self.gamma * self.gae_lambda * running_gae
+            
+            # Store advantage for this timestep
+            advantages[t] = running_gae
+        
+        # Calculate returns (value targets): Rₜ = Aₜ + Vₜ
         returns = advantages + values
         
         return advantages, returns

@@ -27,34 +27,8 @@ class PPOMemory:
         self.values.append(experience['value'])
         self.log_probs.append(experience['log_prob'])
         self.rewards.append(0.0)
-        
-        # Auto-trim if too large
-        if len(self.actions) > self.max_size:
-            self.cut_experience(self.max_size // 2)
 
-    def cut_experience(self, keep_n_from_end):
-        if keep_n_from_end <= 0 or len(self.actions) == 0:
-            return
-        
-        start_index = max(0, len(self.actions) - keep_n_from_end)
-        self.action_types = self.action_types[start_index:]
-        self.actions = self.actions[start_index:]
-        self.probabilities = self.probabilities[start_index:]
-        self.tables = self.tables[start_index:]
-        self.trumps = self.trumps[start_index:]
-        self.values = self.values[start_index:]
-        self.log_probs = self.log_probs[start_index:]
-        self.rewards = self.rewards[start_index:]
-
-    def random_batch(self, batch_size=64):
-        if len(self.actions) == 0:
-            return None
-        
-        self.seed += 1
-        actual_batch_size = min(batch_size, len(self.actions))
-        rng = np.random.default_rng(self.seed)
-        indices = rng.choice(len(self.actions), size=actual_batch_size, replace=False)
-
+    def sample(self, indices):
         return {
             'action_types': [self.action_types[i] for i in indices],
             'actions': [self.actions[i] for i in indices],

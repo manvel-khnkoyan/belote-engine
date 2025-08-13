@@ -19,9 +19,9 @@ def parse_args():
     os.makedirs(save_path, exist_ok=True)
 
     parser = argparse.ArgumentParser(description="Train a Belote agent using cyclic self-play PPO")
-    parser.add_argument("--episodes", type=int, default=50*64, help="Number of episodes per training session")
+    parser.add_argument("--episodes", type=int, default=5*640, help="Number of episodes per training session")
     parser.add_argument("--sessions", type=int, default=5, help="Number of training sessions/cycles")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for PPO updates")
+    parser.add_argument("--batch-size", type=int, default=640, help="Batch size for PPO updates")
     parser.add_argument("--save-path", type=str, default=save_path, help="Path to save models")
     parser.add_argument("--load-path", type=str, default=None, help="Path to load existing model to start from")
     return parser.parse_args()
@@ -48,73 +48,69 @@ def create_agents(model_path=None):
         agents.append(agent)
     
     # The first agent is our main training agent, others are opponents
-    return agents[0], agents[1:]
+    return agents
 
-def train_session(main_agent, opponent_agents, episodes, batch_size, session_num, monitor):
+def train_session(args, agents):
     """Optimized training session with better monitoring"""
-    print(f"\n=== SESSION {session_num} ===")
-    
-    # Reset memory
-    main_agent.memory = PPOMemory()
-    seed = int(time.time()) % 1000 + session_num * 1000
-    session_wins = 0
-    
-    print(f"Collecting experiences for {episodes} episodes...")
+
+    # Set memory for the main agent
+    agents[0].memory = PPOMemory()
+    seed = int(time.time()) % 1000
+    wins = 0
+    rate = 0
+
+    print(f"Collecting experiences for {args.episodes} episodes...")
 
     # Episode collection loop
-    for episode in range(episodes):
-        seed += 1
+    for _ in range(args.episodes):
         deck = get_random_deck()
         trump = get_random_trump()
         next_player = int(np.random.default_rng(seed).integers(0, 4))
         env = BeloteEnv(trump, deck, next_player=next_player)
-        
-        all_agents = [main_agent] + opponent_agents
-        
-        # Use simulate function instead of play
-        simulate(env, all_agents, display=False)
-        
+
+        # simulate
+        simulate(env, agents, display=False)
+
         # Get scores from environment after simulation
         team0_score, team1_score = env.total_scores[0], env.total_scores[1]
-        session_wins += 1 if team0_score > team1_score else 0
-
-        # Enhanced reward shaping
         total_score = team0_score + team1_score
-        if total_score > 0:
-            reward = (team0_score - team1_score) / total_score
-            # More aggressive reward for chaotic environments
-            reward = reward * 2.0  # Amplify signal
-            main_agent.memory.updated_last_rewards(reward, last_n=2)
 
-        if (episode + 1) % (episodes // 10) == 0:
-            win_rate = 100 * session_wins / (episode + 1)
-            print(f"  Episode {episode + 1}/{episodes}, Win rate: {win_rate:.1f}%")
+        wins += 1 if team0_score > team1_score else 0
+        rate = team0_score / total_score
 
-    session_win_rate = 100 * session_wins / episodes
-    print(f"Session {session_num} completed: {session_wins}/{episodes} wins ({session_win_rate:.1f}%)")
+        # Reduce signal amplification to lower KL divergence
+        reward = (team0_score - team1_score) / total_score
+        reward = reward * 1.5  # Reduced from 2.0 for more stable learning
+        agents[0].memory.updated_last_rewards(reward, last_n=2)
+
+    print(f"Experiences completed: {wins}/{args.episodes} rate ({rate:.1f}%)")
+    print()
     
-    print("Learning from collected experiences...")
-    
-    # Enhanced learning loop with monitoring
-    total_updates = round(episodes / batch_size)
-    recent_stats = []
-    
-    for step in range(total_updates):
-        stats = main_agent.learn(batch_size=batch_size)
-        if stats:
-            recent_stats.append(stats)
-        
-        # Print progress every 10 updates
-        if (step + 1) % 10 == 0 and recent_stats:
-            avg_entropy = np.mean([s.get('entropy', 0) for s in recent_stats[-10:]])
-            avg_kl = np.mean([s.get('kl_divergence', 0) for s in recent_stats[-10:]])
-            print(f"    Update {step + 1}/{total_updates} - Entropy: {avg_entropy:.3f}, KL: {avg_kl:.4f}")
-    
-    # Final stats summary
-    if recent_stats:
-        print(f"    Final - Avg Entropy: {np.mean([s.get('entropy', 0) for s in recent_stats]):.3f}")
-    
-    return session_win_rate
+    print("Learning started...")
+
+    # Create batches of indices from 0 to indices_size
+    memory = agents[0].memory
+    indices_size = len(memory)
+    indices_batch = []
+    for i in range(0, indices_size, args.batch_size):
+        batch = list(range(i, min(i + args.batch_size, indices_size)))
+        indices_batch.append(batch)
+
+    for indices in indices_batch:
+        seed += 1
+        # learn by sequential sampling
+        agents[0].learn(memory.sample(indices))
+
+        # learn by randomely - to keep
+        rng = np.random.default_rng(seed=seed)
+        random_indices = rng.choice(indices, size=len(indices), replace=False)
+        agents[0].learn(memory.sample(random_indices))
+
+    # Print progress - Remove the problematic entropy/KL calculation
+    # The original code was trying to access 'entropy' and 'kl_divergence' from memory.actions,
+    # but memory.actions contains integers (action IDs), not dictionaries
+    print("  Learning completed.")
+
 
 def train(args):
     """Main training function with cyclic self-play"""
@@ -124,55 +120,38 @@ def train(args):
     print(f"  Batch size: {args.batch_size}")
     print(f"  Save path: {args.save_path}")
     
-    # Create network monitor
-    monitor = NetworkMonitor()
-    
-    # Track progress across sessions
-    session_win_rates = []
-    
     # Initialize model path
     current_model_path = args.load_path if args.load_path else None
+
+    # Initialize agents
+    agents = []
     
     for session in range(1, args.sessions + 1):
+        print(f"\n=== SESSION {session} ===")
+
         # Create agents for this session
-        main_agent, opponent_agents = create_agents(
+        agents = create_agents(
             model_path=current_model_path,
         )
         
         # Train for this session
-        win_rate = train_session(
-            main_agent, 
-            opponent_agents, 
-            args.episodes, 
-            args.batch_size, 
-            session,
-            monitor
-        )
-        session_win_rates.append(win_rate)
+        train_session(args, agents)
         
         # Save the model after this session
         session_model_path = os.path.join(args.save_path, f"belote_agent_session_{session}.pt")
-        main_agent.save(session_model_path)
-        print(f"Session {session} model saved to: {session_model_path}")
+        agents[0].save(session_model_path)
         
         # Update current model path for next session
         current_model_path = session_model_path
-        
-        # Print progress summary
-        print(f"\nProgress Summary after {session} sessions:")
-        for i, wr in enumerate(session_win_rates, 1):
-            print(f"  Session {i}: {wr:.1f}% win rate")
     
     # Save the final model
-    final_path = os.path.join(args.save_path, "belote_agent_final.pt")
-    main_agent.save(final_path)
-    
+    final_path = os.path.join(args.save_path, "belote_agent.pt")
+    agents[0].save(final_path)
+
     print("\n=== TRAINING COMPLETED ===")
     print(f"Total sessions: {args.sessions}")
-    print(f"Final model saved to: {final_path}")
-    print("Win rate progression:")
-    for i, wr in enumerate(session_win_rates, 1):
-        print(f"  Session {i}: {wr:.1f}%")
+    print(f"Model saved to: {final_path}")
+
 
 if __name__ == "__main__":
     args = parse_args()

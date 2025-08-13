@@ -22,7 +22,7 @@ def parse_args():
     os.makedirs(history_dir, exist_ok=True)
 
     parser = argparse.ArgumentParser(description="Play Belote against trained AI agents")
-    parser.add_argument("--model-path", type=str, default=os.path.join(root, 'models', 'belote_agent_final.pt'), help="Model path for the agent")
+    parser.add_argument("--model-path", type=str, default=os.path.join(root, 'models', 'belote_agent.pt'), help="Model path for the agent")
     parser.add_argument("--mode", type=str, default='play', choices=['play', 'observe', 'record', 'replay', 'test'], help="Type of run: play, observe, record, replay, test")
     parser.add_argument("--repeat", type=int, default=500, help="Repeat the game n times")
     parser.add_argument("--episodes", type=int, default=100, help="Number of episodes to play")

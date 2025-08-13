@@ -62,7 +62,6 @@ class PPOBeloteAgent:
             valid_indices.append(idx)
             card_map[idx] = card
 
-        #action_idx, value, probability, table, trump, log_prob = self.ppo.act(
         experience = self.ppo.act(
             Action.TYPE_CARD_PLAY,
             probability_tensor, 
@@ -84,20 +83,12 @@ class PPOBeloteAgent:
         
         raise ValueError(f"Invalid action: {action_idx}. Valid indices: {valid_indices}")
     
-    def learn(self, batch_size=64):
-        if self.memory is None:
-            raise ValueError("Memory is not initialized. Cannot learn without memory.")
-        
-        # Cut the memory to keep only the last batch_size * 10 experiences
-        self.memory.cut_experience(keep_n_from_end=batch_size * 10)
-
-        # Get a random batch of experiences
-        batch = self.memory.random_batch(batch_size)
-        if batch is None:
-            return
+    def learn(self, samples):
+        if not samples:
+            raise ValueError("No valid samples provided for learning.")
         
         # Perform learning
-        self.ppo.learn(batch)
+        self.ppo.learn(samples)
 
     def save(self, path):
         torch.save({
