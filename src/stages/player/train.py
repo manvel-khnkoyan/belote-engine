@@ -19,7 +19,7 @@ def parse_args():
     os.makedirs(save_path, exist_ok=True)
 
     parser = argparse.ArgumentParser(description="Train a Belote agent using cyclic self-play PPO")
-    parser.add_argument("--episodes", type=int, default=5*640, help="Number of episodes per training session")
+    parser.add_argument("--episodes", type=int, default=10*640, help="Number of episodes per training session")
     parser.add_argument("--sessions", type=int, default=5, help="Number of training sessions/cycles")
     parser.add_argument("--batch-size", type=int, default=640, help="Batch size for PPO updates")
     parser.add_argument("--save-path", type=str, default=save_path, help="Path to save models")
@@ -59,7 +59,7 @@ def train_session(args, agents):
     wins = 0
     rate = 0
 
-    print(f"Collecting experiences for {args.episodes} episodes...")
+    print(f"* Collecting experiences for {args.episodes} episodes...")
 
     # Episode collection loop
     for _ in range(args.episodes):
@@ -68,8 +68,21 @@ def train_session(args, agents):
         next_player = int(np.random.default_rng(seed).integers(0, 4))
         env = BeloteEnv(trump, deck, next_player=next_player)
 
+        # Callback for when a trick ends to update rewards
+        def on_trick_end():
+            nonlocal env
+            nonlocal agents
+
+            if env.trick_scores[0] < env.trick_scores[1]:
+                return
+
+            total_score = env.trick_scores[0] + env.trick_scores[1]
+            total_reward = total_score /  164
+            agents[0].memory.updated_last_rewards(total_reward, last_n=1)
+
+
         # simulate
-        simulate(env, agents, display=False)
+        simulate(env, agents, on_trick_end=on_trick_end, display=False)
 
         # Get scores from environment after simulation
         team0_score, team1_score = env.total_scores[0], env.total_scores[1]
@@ -83,10 +96,10 @@ def train_session(args, agents):
         reward = reward * 1.5  # Reduced from 2.0 for more stable learning
         agents[0].memory.updated_last_rewards(reward, last_n=2)
 
-    print(f"Experiences completed: {wins}/{args.episodes} rate ({rate:.1f}%)")
+    print(f"* Experiences completed: {wins}/{args.episodes} rate ({rate:.1f}%)")
     print()
     
-    print("Learning started...")
+    print("[ Learning started ]")
 
     # Create batches of indices from 0 to indices_size
     memory = agents[0].memory
@@ -106,19 +119,23 @@ def train_session(args, agents):
         random_indices = rng.choice(indices, size=len(indices), replace=False)
         agents[0].learn(memory.sample(random_indices))
 
+    # Display diagnostics
+    agents[0].ppo.display_diagnostics()
+
+
     # Print progress - Remove the problematic entropy/KL calculation
     # The original code was trying to access 'entropy' and 'kl_divergence' from memory.actions,
     # but memory.actions contains integers (action IDs), not dictionaries
-    print("  Learning completed.")
+    print("[ Learning completed ]")
 
 
 def train(args):
     """Main training function with cyclic self-play"""
     print("Starting cyclic self-play training:")
-    print(f"  Sessions: {args.sessions}")
-    print(f"  Episodes per session: {args.episodes}")
-    print(f"  Batch size: {args.batch_size}")
-    print(f"  Save path: {args.save_path}")
+    print(f" . Sessions: {args.sessions}")
+    print(f" . Episodes per session: {args.episodes}")
+    print(f" . Batch size: {args.batch_size}")
+    print(f" . Save path: {args.save_path}")
     
     # Initialize model path
     current_model_path = args.load_path if args.load_path else None
@@ -127,7 +144,7 @@ def train(args):
     agents = []
     
     for session in range(1, args.sessions + 1):
-        print(f"\n=== SESSION {session} ===")
+        print(f"\n====== SESSION {session} ======")
 
         # Create agents for this session
         agents = create_agents(
@@ -148,7 +165,7 @@ def train(args):
     final_path = os.path.join(args.save_path, "belote_agent.pt")
     agents[0].save(final_path)
 
-    print("\n=== TRAINING COMPLETED ===")
+    print("\n====== TRAINING COMPLETED ======")
     print(f"Total sessions: {args.sessions}")
     print(f"Model saved to: {final_path}")
 
