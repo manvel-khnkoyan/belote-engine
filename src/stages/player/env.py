@@ -56,7 +56,7 @@ class BeloteEnv:
         ### When player has cards of the lead suit
         if len(player_table_lead_suit_cards) > 0:
             # When leading suit is trump
-            if self.table[0].is_trump(self.trump):
+            if table_lead_suit == self.trump.suit:
                 # If player has trump cards, that are higher than the table's highest trump card
                 if len(player_winner_cards) > 0:
                     return player_winner_cards
@@ -134,12 +134,12 @@ class BeloteEnv:
         return self.table.total_points(self.trump) + bonus
 
     def display_state(self):
-        # Find the trump suit
-        if np.any(self.trump.values == 1):
-            trump_suit_index = np.argmax(self.trump.values)
-            trump_suit = SUIT_SYMBOLS[trump_suit_index]
-        else:
+        trump_suit = ""
+        if self.trump.mode == self.trump.NO_TRUMP:
             trump_suit = "No"
+        if self.trump.mode == self.trump.REGULAR:
+            trump_suit = SUIT_SYMBOLS[self.trump.suit]
+        # ... other modes
 
         self.display_hash()
         print()

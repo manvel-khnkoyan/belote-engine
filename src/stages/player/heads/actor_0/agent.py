@@ -2,15 +2,15 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
+# Assuming BeloteNetwork is imported here for type hinting if needed
 
-class PPOAgent:
+class Position0Agent:
     def __init__(self, network, lr=3e-4, gamma=0.97, gae_lambda=0.95, clip=0.2, 
                  entropy_coef=0.08, max_grad_norm=0.5, weight_decay=1e-4, 
                  value_loss_coef=0.5):
         self.network = network
         self.optimizer = optim.Adam(network.parameters(), lr=lr, weight_decay=weight_decay)
-        
-        # Chaotic environment optimized parameters
+
         self.gamma = gamma
         self.gae_lambda = gae_lambda
         self.clip = clip
@@ -22,61 +22,55 @@ class PPOAgent:
         self.network.to(self.device)
         
         # Training monitoring and diagnostics
+        self.last_stats = {}
+        self.update_count = 0
         self.training_stats = {
             'policy_loss': [],
             'value_loss': [],
             'entropy': [],
             'clipfrac': []
         }
-        self.last_stats = {}
-        self.update_count = 0
 
-    def act(self, type, probability, table, trump, valid_actions=None, training=False):
-        probability = probability.to(self.device)
-        table = table.to(self.device)
-        trump = trump.to(self.device)
 
+    def act(self, probability, table, trump):
+        # The network's forward method now expects the objects directly
+        # and handles the conversion to tensors internally.
+        
+        self.network.eval() # Set network to evaluation mode for inference
         with torch.no_grad():
-            policy, value = self.network(type, probability, table, trump)
-            policy = policy.squeeze()
+            card_policy_logits, card_value = self.network(probability, table, trump)
+
+            card_policy_logits = card_policy_logits.squeeze(0) # Remove batch dimension if only one sample
+            card_policy_probs = F.softmax(card_policy_logits, dim=-1)
+
+            dist = torch.distributions.Categorical(card_policy_probs)
+            card_action = dist.sample()
+            log_prob = dist.log_prob(card_action)
+
+            # Other heads ....
             
-            if valid_actions is not None:
-                mask = torch.full_like(policy, float('-inf'))
-                mask[valid_actions] = 0
-                policy = policy + mask
-            
-            policy = F.softmax(policy, dim=-1)
-            
-            if torch.isnan(policy).any() or policy.sum() == 0:
-                policy = torch.zeros_like(policy)
-                if valid_actions is not None:
-                    policy[valid_actions] = 1.0 / len(valid_actions)
-                else:
-                    policy.fill_(1.0 / len(policy))
-            
-            # Add exploration noise for chaotic environments
-            if training:
-                noise = torch.randn_like(policy) * 0.01
-                policy = F.softmax(policy.log() + noise, dim=-1)
-            
-            dist = torch.distributions.Categorical(policy)
-            action = dist.sample()
-            log_prob = dist.log_prob(action)
+        # Detect which action is taken
+        action = card_action
+        value = card_value
+        log_prob = log_prob
 
         return {
-            'action_type': type,
+            'probability': probability,
+            'table': table,
+            'trump': trump,
             'action': action.item(),
             'value': value.squeeze().item(),
-            'probability': probability.detach().squeeze().cpu(),
-            'table': table.detach().squeeze().cpu(),
-            'trump': trump.detach().squeeze().cpu(),
             'log_prob': log_prob.item(),
             'entropy': dist.entropy().item()
         }
 
     def learn(self, batch):
-        """Simplified single-pass learning"""
-        
+        """Perform a single learning step on a batch of experience."""
+        self.network.train() # Ensure network is in training mode
+
+        # Move advantages and returns to the device
+        # These are computed from values and rewards, which were already lists of floats
+        # Need to recompute advantages and returns here based on the batch's rewards and values
         advantages, returns = self._compute_gae(batch['rewards'], batch['values'])
         
         # Robust normalization
@@ -87,17 +81,16 @@ class PPOAgent:
         actions_tensor = torch.tensor(batch['actions'], device=self.device, dtype=torch.long)
         old_log_probs = torch.tensor(batch['log_probs'], device=self.device, dtype=torch.float32)
 
-        probs_batch = torch.stack([batch['probabilities'][i] for i in range(batch_size)]).to(self.device)
-        table_batch = torch.stack([batch['tables'][i] for i in range(batch_size)]).to(self.device)
-        trump_batch = torch.stack([batch['trumps'][i] for i in range(batch_size)]).to(self.device)
-        action_type = batch['action_types'][0]
+        # The batch already contains stacked tensors from PPOMemory.sample()
+        probs_batch = batch['probabilities'].to(self.device)
+        table_batch = batch['tables'].to(self.device)
+        trump_batch = batch['trumps'].to(self.device)
         
-        # Forward pass
-        new_policies, new_values = self.network(action_type, probs_batch, table_batch, trump_batch)
-        new_policies = new_policies.squeeze(1) if new_policies.dim() > 2 else new_policies
-        new_values = new_values.squeeze()
+        # Forward pass for the entire batch
+        new_policies_logits, new_values = self.network(probs_batch, table_batch, trump_batch)
+        new_values = new_values.squeeze() # Ensure it's 1D if it came out as [batch, 1]
             
-        dists = torch.distributions.Categorical(F.softmax(new_policies, dim=-1))
+        dists = torch.distributions.Categorical(F.softmax(new_policies_logits, dim=-1))
         new_log_probs = dists.log_prob(actions_tensor)
         entropy = dists.entropy().mean()
         
@@ -109,29 +102,15 @@ class PPOAgent:
 
         policy_loss = -torch.min(surr1, surr2).mean()
         value_loss = F.mse_loss(new_values, returns)
-        entropy_loss = -self.entropy_coef * entropy
+        entropy_loss = -self.entropy_coef * entropy # Maximize entropy, so it's a negative coefficient
         
         loss = policy_loss + self.value_loss_coef * value_loss + entropy_loss
         
-        # Check gradients before update
-        total_grad_norm_before = 0
-        for param in self.network.parameters():
-            if param.grad is not None:
-                total_grad_norm_before += param.grad.data.norm(2).item() ** 2
-        total_grad_norm_before = total_grad_norm_before ** 0.5
-        
-        # Update
+        # Zero gradients, backward pass, clip, and step
         self.optimizer.zero_grad()
         loss.backward()
         
-        # Check gradients after backward
-        total_grad_norm_after = 0
-        for param in self.network.parameters():
-            if param.grad is not None:
-                total_grad_norm_after += param.grad.data.norm(2).item() ** 2
-        total_grad_norm_after = total_grad_norm_after ** 0.5
-        
-        torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.max_grad_norm)
+        total_grad_norm_after = torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.max_grad_norm)
         self.optimizer.step()
         
         # Calculate stats
@@ -143,7 +122,7 @@ class PPOAgent:
             'value_loss': value_loss.item(),
             'entropy': entropy.item(),
             'clipfrac': clipfrac.item(),
-            'grad_norm': total_grad_norm_after,
+            'grad_norm': total_grad_norm_after.item(), # clip_grad_norm_ returns a tensor
             'advantages_mean': advantages.mean().item(),
             'advantages_std': advantages.std().item()
         }
@@ -152,55 +131,37 @@ class PPOAgent:
         for key in ['policy_loss', 'value_loss', 'entropy', 'clipfrac']:
             self.training_stats[key].append(self.last_stats[key])
 
-    
+        self.update_count += 1
         return self.last_stats
     
     def _compute_gae(self, rewards, values):
         """
         Compute Generalized Advantage Estimation (GAE).
         
-        GAE formula:
-        δₜ = rₜ + γVₜ₊₁ - Vₜ
-        Aₜ = δₜ + (γλ)δₜ₊₁ + (γλ)²δₜ₊₂ + ...
-        
         Args:
             rewards: List of rewards for each timestep
             values: List of value estimates for each timestep
         
         Returns:
-            advantages: GAE advantages for each timestep
-            returns: Value targets (advantages + values)
+            advantages: GAE advantages for each timestep (tensor)
+            returns: Value targets (advantages + values) (tensor)
         """
         if len(rewards) == 0:
             return torch.tensor([], device=self.device), torch.tensor([], device=self.device)
         
-        # Convert to tensors
+        # Convert to tensors and move to device
         rewards = torch.tensor(rewards, device=self.device, dtype=torch.float32)
         values = torch.tensor(values, device=self.device, dtype=torch.float32)
         
-        # Initialize advantages tensor
         advantages = torch.zeros_like(rewards)
-        
-        # GAE calculation - work backwards through time
         running_gae = 0.0
         
         for t in reversed(range(len(rewards))):
-            # Calculate next value (0 for terminal state)
-            if t == len(rewards) - 1:
-                next_value = 0.0  # Terminal state has no next value
-            else:
-                next_value = values[t + 1]
-            
-            # Calculate TD error: δₜ = rₜ + γVₜ₊₁ - Vₜ
+            next_value = 0.0 if t == len(rewards) - 1 else values[t + 1]
             delta = rewards[t] + self.gamma * next_value - values[t]
-            
-            # Update running GAE: Aₜ = δₜ + γλAₜ₊₁
             running_gae = delta + self.gamma * self.gae_lambda * running_gae
-            
-            # Store advantage for this timestep
             advantages[t] = running_gae
         
-        # Calculate returns (value targets): Rₜ = Aₜ + Vₜ
         returns = advantages + values
         
         return advantages, returns
@@ -238,11 +199,15 @@ class PPOAgent:
         if not self.training_stats['policy_loss']:
             return "No training data available"
         
+        # Ensure that stats are computed only if there's enough data
+        avg_entropy = np.mean(self.training_stats['entropy'][-100:]) if len(self.training_stats['entropy']) >= 100 else (np.mean(self.training_stats['entropy']) if len(self.training_stats['entropy']) > 0 else 0)
+        avg_policy_loss = np.mean(self.training_stats['policy_loss'][-100:]) if len(self.training_stats['policy_loss']) >= 100 else (np.mean(self.training_stats['policy_loss']) if len(self.training_stats['policy_loss']) > 0 else 0)
+
         return {
             'total_updates': self.update_count,
             'current_entropy': self.training_stats['entropy'][-1] if self.training_stats['entropy'] else 0,
-            'avg_entropy': np.mean(self.training_stats['entropy'][-100:]) if len(self.training_stats['entropy']) >= 100 else np.mean(self.training_stats['entropy']),
-            'avg_policy_loss': np.mean(self.training_stats['policy_loss'][-100:]) if len(self.training_stats['policy_loss']) >= 100 else np.mean(self.training_stats['policy_loss'])
+            'avg_entropy': avg_entropy,
+            'avg_policy_loss': avg_policy_loss
         }
 
     def reset_training_stats(self):
@@ -253,3 +218,4 @@ class PPOAgent:
             'entropy': [],
             'clipfrac': []
         }
+        self.update_count = 0 # Reset update count as well

@@ -8,7 +8,7 @@ from src.stages.player.network import BeloteNetwork
 from src.stages.player.ppo.belote_agent import PPOBeloteAgent
 from src.stages.player.ppo.memory import PPOMemory
 from src.stages.player.helper_agents.randomer import Randomer
-from src.states.trump import Trump
+from trump import Trump
 from src.deck import Deck
 from src.stages.player.simulator import simulate
 from src.stages.player.network_monitor import NetworkMonitor
@@ -25,12 +25,6 @@ def parse_args():
     parser.add_argument("--save-path", type=str, default=save_path, help="Path to save models")
     parser.add_argument("--load-path", type=str, default=None, help="Path to load existing model to start from")
     return parser.parse_args()
-
-def get_random_trump():
-    """Get a random trump suit for the game"""
-    trump = Trump()
-    trump.set_random_trump()
-    return trump
 
 def get_random_deck():
     """Get a random deck of cards for the game"""
@@ -50,6 +44,20 @@ def create_agents(model_path=None):
     # The first agent is our main training agent, others are opponents
     return agents
 
+ # Callback for when a trick ends to update rewards
+def create_on_trick_end(env, agents):
+    # Calculate the point differential for the trick
+    # trick_scores[0] is team 0 (our agent's team)
+    # trick_scores[1] is team 1 (opponent team)
+    trick_reward = env.trick_scores[0] - env.trick_scores[1]
+
+    # Normalize the reward to a smaller, more stable range (e.g., -1 to 1)
+    # Max possible points in a trick is around 30-50. Let's use a conservative normalizer.
+    normalized_reward = trick_reward / 50.0
+
+    # The agent played one of the last 4 cards. We give the reward to the last action.
+    agents[0].memory.updated_last_rewards(normalized_reward, last_n=1)
+
 def train_session(args, agents):
     """Optimized training session with better monitoring"""
 
@@ -64,22 +72,12 @@ def train_session(args, agents):
     # Episode collection loop
     for _ in range(args.episodes):
         deck = get_random_deck()
-        trump = get_random_trump()
+        trump = Trump.random()
         next_player = int(np.random.default_rng(seed).integers(0, 4))
         env = BeloteEnv(trump, deck, next_player=next_player)
 
-        # Callback for when a trick ends to update rewards
-        def on_trick_end():
-            nonlocal env
-            nonlocal agents
-
-            if env.trick_scores[0] < env.trick_scores[1]:
-                return
-
-            total_score = env.trick_scores[0] + env.trick_scores[1]
-            total_reward = total_score /  164
-            agents[0].memory.updated_last_rewards(total_reward, last_n=1)
-
+        # Create the on_trick_end callback
+        on_trick_end = create_on_trick_end(env, agents)
 
         # simulate
         simulate(env, agents, on_trick_end=on_trick_end, display=False)
@@ -102,26 +100,18 @@ def train_session(args, agents):
     print("[ Learning started ]")
 
     # Create batches of indices from 0 to indices_size
+    seed += 1
     memory = agents[0].memory
     indices_size = len(memory)
-    indices_batch = []
+    rng = np.random.default_rng(seed=seed)
+    indices_shuffled = rng.permutation(indices_size)
     for i in range(0, indices_size, args.batch_size):
-        batch = list(range(i, min(i + args.batch_size, indices_size)))
-        indices_batch.append(batch)
-
-    for indices in indices_batch:
-        seed += 1
+        indices = indices_shuffled[i:i + args.batch_size]
         # learn by sequential sampling
         agents[0].learn(memory.sample(indices))
 
-        # learn by randomely - to keep
-        rng = np.random.default_rng(seed=seed)
-        random_indices = rng.choice(indices, size=len(indices), replace=False)
-        agents[0].learn(memory.sample(random_indices))
-
-    # Display diagnostics
-    agents[0].ppo.display_diagnostics()
-
+        # Display diagnostics
+        agents[0].ppo.display_diagnostics()
 
     # Print progress - Remove the problematic entropy/KL calculation
     # The original code was trying to access 'entropy' and 'kl_divergence' from memory.actions,

@@ -43,8 +43,8 @@ class Card:
                 return self.rank > other.rank
 
             return self_value > other_value
-        
-        if self.is_trump(trump):
+
+        if self.suit == trump.suit:
             return True
         
         return False
@@ -53,9 +53,6 @@ class Card:
         self.suit = transform(self.suit)
 
         return self
-    
-    def is_trump(self, trump):
-        return trump.values[self.suit] == 1
     
     def value(self, trump):
         # Define values dictionary based on rank indices
@@ -70,12 +67,12 @@ class Card:
             0: 0    # SEVEN
         }
 
-        if trump.has_trump() == False:
+        if trump.mode == trump.NO_TRUMP:
             values[7] = 19  # ACE becomes highest
             return values[self.rank]
 
-        # Adjust values for trump cards
-        if self.is_trump(trump):
+        # When in Regular trump mode
+        if self.suit == trump.suit:
             values[4] = 20  # JACK becomes highest in trump
             values[2] = 14  # NINE becomes second highest in trump
             return values[self.rank]

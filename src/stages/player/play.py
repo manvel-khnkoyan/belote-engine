@@ -2,13 +2,13 @@ import os
 import argparse
 import time
 import numpy as np
-from src.stages.player.network import BeloteNetwork
+from stages.player.agents.position0.network import BeloteNetwork
 from src.stages.player.ppo.belote_agent import PPOBeloteAgent
-from src.stages.player.helper_agents.human import Human
+from stages.player.human import Human
 from src.stages.player.helper_agents.randomer import Randomer
 from src.stages.player.history import History
 from src.deck import Deck
-from src.states.trump import Trump
+from src.trump import Trump
 from src.stages.player.env import BeloteEnv
 from src.stages.player.simulator import simulate
 from src.stages.player.actions import ActionCardPlay
@@ -34,13 +34,13 @@ def parse_args():
 
 def create_env():
     """Create a new game environment with random setup"""
-    trump = Trump()
-    trump.set_random_trump()
+    # Use the static random() method from your Trump class
+    trump = Trump.random()
 
     deck = Deck()
     deck.reset()
     deck.deal_cards(8)
-    deck.reorder_hands(trump)
+    deck.sort_hands(trump)
 
     # Choose random starting player
     rng = np.random.default_rng(None)
@@ -76,6 +76,16 @@ def get_history_files(history_dir):
     return [item for item in items if item.startswith('history-') and os.path.isfile(os.path.join(history_dir, item))]
 
 
+def actions_equal(action1, action2):
+    """Check if two actions are equal - helper function for replay/test modes"""
+    if type(action1) != type(action2):
+        return False
+    if isinstance(action1, ActionCardPlay) and isinstance(action2, ActionCardPlay):
+        return (action1.card.suit == action2.card.suit and 
+                action1.card.rank == action2.card.rank)
+    return action1 == action2
+
+
 def fn_play(args):
     """Human plays against AI agents"""
     env = create_env()
@@ -103,7 +113,7 @@ def fn_observe(args):
     ]
     
     wins = 0
-    for _ in range(args.episodes):
+    for episode in range(args.episodes):
         env = create_env()
         simulate(env, agents, display=False)
         gain, lose = env.total_scores[0], env.total_scores[1]
@@ -144,7 +154,13 @@ def fn_replay(args):
     env = history.create_env()
     agents = [load_ai_agent(args.model_path) for _ in range(4)]
 
-    print(f"Replaying game from: {args.history_file}")
+    # Display trump information for replay
+    if env.trump.mode == Trump.NO_TRUMP:
+        print(f"Replaying game from: {args.history_file} (Trump: NO TRUMP)")
+    else:
+        suit_names = {0: "Spades", 1: "Hearts", 2: "Diamonds", 3: "Clubs"}
+        trump_suit = suit_names.get(env.trump.suit, f"Suit {env.trump.suit}")
+        print(f"Replaying game from: {args.history_file} (Trump: {trump_suit})")
 
     def choose_action(env, agent, history=history):
         action, _ = history.get_next_action()
@@ -168,6 +184,7 @@ def fn_test(args):
     
     total_correct = 0
     total_moves = 0
+    trump_stats = {"regular": {"correct": 0, "total": 0}, "no_trump": {"correct": 0, "total": 0}}
     
     for history_file in history_files:
         # Load history
@@ -177,13 +194,19 @@ def fn_test(args):
         print(f"Testing: {history_file}")
 
         def choose_action(env, agent, history=history):
-            nonlocal total_moves
-            nonlocal total_correct
+            nonlocal total_moves, total_correct, trump_stats
             
             total_moves += 1
             action, _ = history.get_next_action()
             action_made = agent.choose_action(env)
-            total_correct += 1 if action == action_made else 0
+            is_correct = actions_equal(action, action_made)
+            total_correct += 1 if is_correct else 0
+            
+            # Track trump-specific stats
+            trump_type = "no_trump" if env.trump.mode == Trump.NO_TRUMP else "regular"
+            trump_stats[trump_type]["total"] += 1
+            if is_correct:
+                trump_stats[trump_type]["correct"] += 1
     
             return action
         
@@ -195,7 +218,6 @@ def fn_test(args):
     
     accuracy = (total_correct / total_moves * 100) if total_moves > 0 else 0
     print(f"\nOverall accuracy: {accuracy:.2f}% ({total_correct}/{total_moves})")
-
 
 if __name__ == "__main__":
     args = parse_args()

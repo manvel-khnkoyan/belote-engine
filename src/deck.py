@@ -1,6 +1,6 @@
-from src.card import Card
-from src.states.trump import Trump
 import random
+from src.card import Card
+from src.trump import Trump
 
 class Deck:
     def __init__(self):
@@ -50,26 +50,23 @@ class Deck:
 
         return True
         
-    def reorder_hands(self, trump: Trump):
+    def sort_hands(self, trump: Trump):
         for player in range(4):
             player_hand = self.hands[player]
-            
-            # Define sorting key function
-            def sort_key(card):
-                # Primary sort: non-trump suits after trump suit (1 for non-trump, 0 for trump)
-                is_not_trump = 0 if card.is_trump(trump) else 1
-                
-                # Secondary sort: by suit (only matters for non-trump suits)
-                suit = card.suit
-                
-                # Tertiary sort: by value in DESCENDING order (negative so higher values come first)
-                # We use the card's value method which accounts for trump status
-                value = -card.value(trump)  # Negative to sort in descending order
-                
-                return (is_not_trump, suit, value)
-            
-            # Sort the player's hand using the custom sorting key
-            self.hands[player] = sorted(player_hand, key=sort_key)
+
+            # group cards by suits
+            grouped_cards = {suit: [] for suit in range(4)}
+            for card in player_hand:
+                grouped_cards[card.suit].append(card)
+
+            # Sort groups by value sum descending
+            sorted_groups = sorted(grouped_cards.values(), key=lambda group: sum(card.value(trump) for card in group), reverse=True)
+
+            # Sort by trump suit
+            if trump.mode == Trump.REGULAR:
+                sorted_groups.sort(key=lambda group: 0 if len(group) > 0 and group[0].suit == trump.suit else 1)
+
+            self.hands[player] = [card for group in sorted_groups for card in group]
 
     def copy(self):
         new_deck = Deck()

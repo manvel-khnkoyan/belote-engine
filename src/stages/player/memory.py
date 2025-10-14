@@ -1,7 +1,6 @@
 import time
 import numpy as np
 
-
 class PPOMemory:
     def __init__(self, max_size=10000):
         self.max_size = max_size
@@ -9,7 +8,6 @@ class PPOMemory:
         self.seed = int(time.time() * 1000)
 
     def clear(self):
-        self.action_types = []
         self.actions = []
         self.probabilities = []
         self.tables = []
@@ -17,9 +15,12 @@ class PPOMemory:
         self.values = []
         self.log_probs = []
         self.rewards = []
+        self.length = 0
 
     def add_experience(self, experience):
-        self.action_types.append(experience['action_type'])
+        if self.length >= self.max_size:
+            raise ValueError("PPOMemory exceeded max_size. Implement circular buffer logic.")
+
         self.actions.append(experience['action'])
         self.probabilities.append(experience['probability'])
         self.tables.append(experience['table'])
@@ -27,10 +28,10 @@ class PPOMemory:
         self.values.append(experience['value'])
         self.log_probs.append(experience['log_prob'])
         self.rewards.append(0.0)
+        self.length += 1
 
     def sample(self, indices):
         return {
-            'action_types': [self.action_types[i] for i in indices],
             'actions': [self.actions[i] for i in indices],
             'probabilities': [self.probabilities[i] for i in indices],
             'tables': [self.tables[i] for i in indices],
@@ -48,9 +49,8 @@ class PPOMemory:
 
     def __len__(self):
         return len(self.actions)
-    
+
     def __str__(self):
         return (f"PPOMemory(size={len(self)}, "
-                f"last_action_type={self.action_types[-1] if self.action_types else None}, "
                 f"last_action={self.actions[-1] if self.actions else None}, "
                 f"last_reward={self.rewards[-1] if self.rewards else None})")
