@@ -1,5 +1,5 @@
 import numpy as np
-from src.states.probability import Probability
+from src.common.states.probability import Probability
 
 class SuitsCanonicalTransformer:
     """
