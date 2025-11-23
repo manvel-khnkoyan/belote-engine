@@ -14,7 +14,7 @@ class Card:
 
     def beats(self, trump: Trump, next: "Card") -> bool:
         if self.suit != next.suit:
-            return next.suit != trump.suit
+            return trump.mode == TrumpMode.Regular and self.suit == trump.suit
         
         diff = self.value(trump) - next.value(trump)
         return diff > 0 if diff != 0 else self.rank > next.rank
@@ -62,23 +62,42 @@ class Card:
         
         # Regular (Trump suit) mode
         elif trump.mode == TrumpMode.Regular:
-            match self.rank:
-                case 4:  # JACK (trump)
-                    return 20
-                case 2:  # NINE (trump)
-                    return 14
-                case 7:  # ACE
-                    return 11
-                case 3:  # TEN
-                    return 10
-                case 6:  # KING
-                    return 4
-                case 5:  # QUEEN
-                    return 3
-                case 1:  # EIGHT
-                    return 0
-                case 0:  # SEVEN
-                    return 0
+            if self.suit == trump.suit:
+                match self.rank:
+                    case 4:  # JACK (trump)
+                        return 20
+                    case 2:  # NINE (trump)
+                        return 14
+                    case 7:  # ACE
+                        return 11
+                    case 3:  # TEN
+                        return 10
+                    case 6:  # KING
+                        return 4
+                    case 5:  # QUEEN
+                        return 3
+                    case 1:  # EIGHT
+                        return 0
+                    case 0:  # SEVEN
+                        return 0
+            else:
+                match self.rank:
+                    case 7:  # ACE
+                        return 11
+                    case 3:  # TEN
+                        return 10
+                    case 6:  # KING
+                        return 4
+                    case 5:  # QUEEN
+                        return 3
+                    case 4:  # JACK
+                        return 2
+                    case 2:  # NINE
+                        return 0
+                    case 1:  # EIGHT
+                        return 0
+                    case 0:  # SEVEN
+                        return 0
         
         # Default fallback
         raise ValueError(f"Unknown trump mode: {trump.mode}")

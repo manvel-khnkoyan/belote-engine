@@ -3,7 +3,7 @@ from functools import cmp_to_key
 from typing import List
 
 from card import Card
-from trump import Trump
+from trump import Trump, TrumpMode
 
 class Set:
     Tierce = 1
@@ -22,9 +22,9 @@ class Set:
         if self.type == Set.Quartet:
             # Rank: 7=0, 8=1, 9=2, 10=3, J=4, Q=5, K=6, A=7
             rank = self.cards[0].rank
-            if rank == 2: return 0 if trump.mode == Trump.Mode.NoTrump else 140 # 9
-            if rank == 4: return 100 if trump.mode == Trump.Mode.NoTrump else 200 # J
-            if rank == 7: return 190 if trump.mode == Trump.Mode.NoTrump else 100 # A
+            if rank == 2: return 0 if trump.mode == TrumpMode.NoTrump else 140 # 9
+            if rank == 4: return 100 if trump.mode == TrumpMode.NoTrump else 200 # J
+            if rank == 7: return 190 if trump.mode == TrumpMode.NoTrump else 100 # A
             if rank in (3, 5, 6): return 100 # 10, Q, K
             return 0 # 7, 8
         return 0
@@ -38,8 +38,8 @@ class Set:
             return self.value(trump) > other.value(trump)
 
         # Sequence priority
-        is_trump = trump.mode != Trump.Mode.Regular and self.cards[0].suit == trump.suit
-        other_trump = trump.mode != Trump.Mode.Regular and other.cards[0].suit == trump.suit
+        is_trump = trump.mode == TrumpMode.Regular and self.cards[0].suit == trump.suit
+        other_trump = trump.mode == TrumpMode.Regular and other.cards[0].suit == trump.suit
         
         if is_trump != other_trump:
             return is_trump

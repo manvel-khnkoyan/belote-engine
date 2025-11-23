@@ -2,7 +2,6 @@ import os
 import argparse
 import numpy as np
 import time
-import torch
 from src.stages.player.env import BeloteEnv
 from src.stages.player.network import BeloteNetwork
 from src.stages.player.ppo.belote_agent import PPOBeloteAgent
