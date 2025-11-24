@@ -42,7 +42,7 @@ The architecture separates the **Game Logic (Core)** from the **Decision Making 
 The simulation follows a strict cycle:
 
 *   **Rules**: Determines valid moves from the current state (`Rules(State) -> [Action]`).
-*   **Agent**: Selects an action from the valid options (`Agent.choose_action(State, [Action]) -> Action`).
+*   **Agent**: Selects an action from the valid options (`Agent(State).choose_action([Action]) -> Action`).
 *   **State**: Updates itself based on actions (`State.observe(player, Action)`).
 *   **Simulator**: Orchestrates the game loop using Rules and Agents to produce a final outcome (`Simulator(Rules, Agents) -> Result`).
 

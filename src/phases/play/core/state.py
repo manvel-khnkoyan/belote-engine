@@ -7,7 +7,8 @@ from typing import List
 State is personal from first person view.
 """
 class State:
-    def __init__(self, cards: List[Card], trump: Trump):
+    def __init__(self, player_index: int, cards: List[Card], trump: Trump):
+        self.player_index = player_index
         self.cards = cards
         self.trump = trump
         self.table = []

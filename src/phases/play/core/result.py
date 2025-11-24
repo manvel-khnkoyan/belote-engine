@@ -1,5 +1,6 @@
 from typing import List
-from record import Record
+import pickle
+from .record import Record
 from src.models.deck import Deck
 from src.models.trump import Trump
 
@@ -8,3 +9,12 @@ class Result:
         self.deck = deck
         self.trump = trump
         self.records = records
+
+    def save(self, path: str):
+        with open(path, 'wb') as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(path: str) -> 'Result':
+        with open(path, 'rb') as f:
+            return pickle.load(f)
