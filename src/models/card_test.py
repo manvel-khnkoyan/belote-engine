@@ -134,3 +134,21 @@ class TestCard:
         
         assert c_8.beats(trump, c_7) == True
         assert c_7.beats(trump, c_8) == False
+
+    def test_is_trump(self):
+        # Regular mode
+        trump_spades = Trump(TrumpMode.Regular, 0) # Spades is trump
+        assert Card(0, 7).is_trump(trump_spades) is True  # Spade is trump
+        assert Card(1, 7).is_trump(trump_spades) is False # Heart is not trump
+
+        # AllTrump mode
+        trump_all = Trump(TrumpMode.AllTrump, None)
+        assert Card(0, 7).is_trump(trump_all) is True
+        assert Card(1, 7).is_trump(trump_all) is True
+        assert Card(2, 7).is_trump(trump_all) is True
+        assert Card(3, 7).is_trump(trump_all) is True
+
+        # NoTrump mode
+        trump_no = Trump(TrumpMode.NoTrump, None)
+        assert Card(0, 7).is_trump(trump_no) is False
+        assert Card(1, 7).is_trump(trump_no) is False

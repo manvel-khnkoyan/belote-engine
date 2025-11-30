@@ -17,26 +17,14 @@ class ActionPlayCard(Action):
 
     def __repr__(self):
         return f"PlayCard({self.card})"
-    
-class ActionDeclareSetsYes(Action):
+
+class ActionDeclareSets(Action):
     def __init__(self, sets: List[Set]):
         self.sets = sets
 
     def __repr__(self):
-        return f"DeclareSets[Yes]({self.sets})"
-    
-class ActionDeclareSetsNo(Action):
-    def __repr__(self):
-        return "DeclareSets[No]"
+        return f"DeclareSets({self.sets})"
 
-class ActionDeclareSetsNo(Action):
+class ActionDeclareBets(Action):
     def __repr__(self):
-        return "DeclareSets[No]"
-    
-class ActionDeclareBetsYes(Action):
-    def __repr__(self):
-        return "DeclareBets[Yes]"
-    
-class ActionDeclareBetsNo(Action):
-    def __repr__(self):
-        return "DeclareBets[No]"
+        return "DeclareBets"

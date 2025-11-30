@@ -1,4 +1,5 @@
 
+from sre_parse import State
 from typing import List
 from src.phases.play.core.agent import Agent
 from src.phases.play.core.actions import Action, ActionPlayCard
@@ -6,7 +7,7 @@ from src.phases.play.core.actions import Action, ActionPlayCard
 class HumanAgent(Agent):
     """Human player agent that prompts for input"""
     
-    def choose_action(self, actions: List[Action]) -> Action:
+    def choose_action(self, state: State, actions: List[Action]) -> Action:
         """Prompt human player to choose an action"""
         # Filter valid play card actions
         valid_play_actions = [action for action in actions if isinstance(action, ActionPlayCard)]
@@ -16,7 +17,7 @@ class HumanAgent(Agent):
             return actions[0] if actions else None
         
         valid_cards = [action.card for action in valid_play_actions]
-        player_hand = self.state.cards
+        player_hand = state.cards
         
         # Display available cards
         self._display_options(player_hand, valid_cards)
@@ -34,7 +35,7 @@ class HumanAgent(Agent):
                 card_indices.append('.')
         
         print(f"Hands: {' '.join(str(card) for card in player_hand)}")
-        print(f"Input: {'   '.join(card_indices)}", end=" : ")
+        print(f"Input:  {'   '.join(card_indices)}", end=" : ")
     
     def _get_user_choice(self, player_hand: List, valid_cards: List, valid_actions: List[ActionPlayCard]) -> Action:
         """Get and validate user's card choice"""

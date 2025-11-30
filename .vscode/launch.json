@@ -5,6 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug Play",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/phases/play/cli/play.py",
+            "console": "integratedTerminal",
+            "python": "${workspaceFolder}/bin/python",
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Python Debugger: Python File",
             "type": "debugpy",
             "request": "launch",

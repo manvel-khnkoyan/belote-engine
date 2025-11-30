@@ -1,6 +1,6 @@
 import random
 from typing import Callable, Tuple
-from card import Card
+from src.models.card import Card
 
 class Deck:
     def __init__(self):
@@ -44,3 +44,9 @@ class Deck:
             card.suit = suit_map[card.suit]
         
         return (lambda s: suit_map[s]), (lambda c: rev_map[c])
+
+    def __repr__(self):
+        try:
+            return f"Deck(cards={[repr(c) for c in self.cards]})"
+        except Exception:
+            return "Deck(...)"

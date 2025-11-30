@@ -2,8 +2,8 @@ from collections import defaultdict
 from functools import cmp_to_key
 from typing import List
 
-from card import Card
-from trump import Trump, TrumpMode
+from src.models.card import Card
+from src.models.trump import Trump, TrumpMode
 
 class Set:
     Tierce = 1

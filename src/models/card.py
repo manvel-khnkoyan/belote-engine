@@ -1,5 +1,5 @@
-from trump import Trump, TrumpMode
-from const import Suits, Ranks
+from src.models.trump import Trump, TrumpMode
+from src.const import Suits, Ranks
 
 class Card:
     def __init__(self, suit: int, rank: int):
@@ -11,6 +11,10 @@ class Card:
     
     def __repr__(self):
         return f"{Ranks[self.rank]}{Suits[self.suit]}"
+
+    def is_trump(self, trump: Trump) -> bool:
+        return (trump.mode == TrumpMode.AllTrump) or \
+               (trump.mode == TrumpMode.Regular and self.suit == trump.suit)
 
     def beats(self, trump: Trump, next: "Card") -> bool:
         if self.suit != next.suit:
@@ -101,5 +105,13 @@ class Card:
         
         # Default fallback
         raise ValueError(f"Unknown trump mode: {trump.mode}")
+    
+    def __eq__(self, other):
+        if not isinstance(other, Card):
+            return False
+        return self.suit == other.suit and self.rank == other.rank
+
+    def __hash__(self):
+        return hash((self.suit, self.rank))
 
 

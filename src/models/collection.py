@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, Iterable
-from card import Card
-from trump import Trump
+from src.models.card import Card
+from src.models.trump import Trump
 
 class Collection(list[Card]):
     def __init__(self, cards: Iterable[Card] = None):
@@ -19,6 +19,9 @@ class Collection(list[Card]):
             if self[i].beats(trump, best_card):
                 best_idx, best_card = i, self[i]
         return best_card, best_idx
+    
+    def value(self, trump: Trump) -> int:
+        return sum(card.value(trump) for card in self)
 
     def sort(self, trump: Trump) -> "Collection":
         super().sort(key=lambda c: (c.suit != trump.suit, c.suit, -c.value(trump), -c.rank))
