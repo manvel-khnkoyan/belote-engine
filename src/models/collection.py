@@ -24,7 +24,25 @@ class Collection(list[Card]):
         return sum(card.value(trump) for card in self)
 
     def sort(self, trump: Trump) -> "Collection":
-        super().sort(key=lambda c: (c.suit != trump.suit, c.suit, -c.value(trump), -c.rank))
+        # Calculate max value, sum, and count per suit
+        suit_stats = {}
+        for card in self:
+            if card.suit not in suit_stats:
+                suit_stats[card.suit] = {'max': 0, 'sum': 0, 'count': 0}
+            suit_stats[card.suit]['max'] = max(suit_stats[card.suit]['max'], card.value(trump))
+            suit_stats[card.suit]['sum'] += card.value(trump)
+            suit_stats[card.suit]['count'] += 1
+        
+        # Sort: trump first, then by max value, sum, count (all descending), suit number, then card value within suit
+        super().sort(key=lambda c: (
+            c.suit != trump.suit,           # Trump cards first
+            -suit_stats[c.suit]['max'],     # Sort suits by max value (highest first)
+            -suit_stats[c.suit]['sum'],     # If equal, by sum (highest first)
+            -suit_stats[c.suit]['count'],   # If equal, by count (most cards first)
+            c.suit,                         # If still equal, by suit number (ascending)
+            -c.value(trump),                # Within suit, highest value first
+            -c.rank                         # Tiebreaker
+        ))
         return self
 
         

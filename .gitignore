@@ -11,5 +11,6 @@ share
 .idea
 .DS_Store
 .pytest_cache
+.coverage
 pyvenv.cfg
 /env

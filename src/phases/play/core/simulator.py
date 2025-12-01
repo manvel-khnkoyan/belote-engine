@@ -12,7 +12,7 @@ from .actions import ActionPlayCard, ActionPass
 from .record import Record
 
 class Simulator:
-    def __init__(self, rules: Rules, agents: List[Agent], display: bool = True):
+    def __init__(self, rules: Rules, agents: List[Agent], display: bool = False):
         self.rules = rules
         self.agents = agents
         self.display = display
@@ -22,8 +22,8 @@ class Simulator:
         self.scores = [0, 0]
         self.trump = trump
         
-        # Deal hands
-        hands = deck.deal()
+        # Deal and sort hands
+        hands = [Collection(hand).sort(trump) for hand in deck.deal()]
 
         # State
         self.states = states if states else [State(hands[i], trump) for i in range(4)]
@@ -36,6 +36,9 @@ class Simulator:
 
         # Player last played record (dictionary)
         player_last_card_played_record_index = {}
+
+        # Display Line
+        self._display_line()
         
         # Unitil All cards played
         while cards_moves < 32:
@@ -44,9 +47,6 @@ class Simulator:
             current_player = next_player # Absolute player index 0..3 by agent order
             current_agent = self.agents[current_player]
             current_state = self.states[current_player]
-
-            # Display state before action (pass current trick number)
-            self._display_header(current_player, cards_moves // 4)
             
             # Get valid actions
             actions = self.rules.actions(current_state)
@@ -69,11 +69,11 @@ class Simulator:
                 # Update Table
                 current_table.append(action.card)
 
+                # Display Table after action
+                self._display_table(current_table)
+
                 # Update Card Moves
                 cards_moves += 1
-
-                # Trick number: 0..7
-                trick_number = cards_moves // 4
 
                 # Winner card and its index on the table
                 _, winner_table_idx = current_table.winner(trump)
@@ -100,9 +100,6 @@ class Simulator:
                 
                 # END OF TRICK PROCESSING
                 if cards_moves % 4 == 0:
-                    # End of trick processing
-                    self._display_table(current_state.table) # Show full table before clearing
-
                     # Lazy reward update (accrued) for the last played cards
                     records[player_last_card_played_record_index[winner_player_index]].accrued_reward = table_points
                     
@@ -112,14 +109,15 @@ class Simulator:
                     # Set winner as next player
                     next_player = winner_player_index
 
+                    # Display Table after action
+                    self._display_line()
+
             # Update all states 
             for i in range(4):
                 self.states[i].observe(self._relative_player(i, current_player), action)
 
-            self._display_line()
-        
-        if self.display:
-            self._display_summary()
+        self._display_summary()
+
         return Result(deck, trump, records)
 
     def _trick_points(self, table: Collection, trump: Trump, last_trick: bool) -> int:
@@ -131,26 +129,13 @@ class Simulator:
     def _relative_player(self, current_player: int, relative_to: int) -> int:
         """Get player index relative to another player"""
         return (current_player - relative_to) % 4
-    
-    def _display_header(self, index: int, trick_number: int):
-        if self.display:
-            self._display_state(self.states[index].trump, index, trick_number)
-            self._display_table(self.states[index].table)
 
-    def _display_state(self, trump, index: int, trick_number: int):
-        """Display the current game state"""
-        self._display_hash()
-        print()
-        print(f"Trick: {trick_number} | Next: Player {index} | Trump: {trump}")
-        print()
-
-
-    def _display_table(self, table: List[Card]):
+    def _display_table(self, current_table: Collection):
         if not self.display:
             return
 
         """Display cards on the table"""
-        table_cards = [str(card) for card in table]
+        table_cards = [str(card) for card in current_table]
         
         # Fill with placeholders if needed
         while len(table_cards) < 4:
@@ -159,21 +144,20 @@ class Simulator:
         print(f"Table: {' '.join(table_cards)}")
 
     def _display_summary(self):
+        if not self.display:
+            return
+
         """Display final round summary"""
         round_gain = self.scores[0]
         round_loss = self.scores[1]
         win_or_lost = '[0]' if round_gain > round_loss else '[1]'
 
-        self._display_hash()
-        print()
+        self._display_line()
         print(f"Total: Winner is {win_or_lost}, Total ({round_gain}, {round_loss})")
-        print()
-        self._display_hash()
-
-    def _display_line(self):
-        """Display a separator line"""
-        print("------------------------------------------")
+        self._display_line()
         
-    def _display_hash(self):
+    def _display_line(self):
         """Display a hash separator"""
-        print("##########################################")
+        print("")
+        print("-----------------------------------------")
+        print("")

@@ -1,6 +1,8 @@
 import random
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 from src.models.card import Card
+from src.models.collection import Collection
+from src.models.trump import Trump
 
 class Deck:
     def __init__(self):

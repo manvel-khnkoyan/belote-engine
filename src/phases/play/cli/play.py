@@ -20,6 +20,7 @@ def main():
     rules = Rules()
     simulator = Simulator(rules, agents, display=True)
     
+    print("")
     print("Starting Belote Game Simulation...")
     print(f"Trump is {trump}")
     print("You are Player 0.")
@@ -31,7 +32,6 @@ def main():
     print("\nGame Over!")
     print(f"Total Scores: {simulator.scores}")
 
-    print("Print Result as JSON:")
     print(result)
 
 if __name__ == "__main__":

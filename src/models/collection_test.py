@@ -111,37 +111,102 @@ class TestList:
         # Spades Trump
         trump = Trump(TrumpMode.Regular, 0)
         
-        c1 = Card(1, 7) # Ace Hearts (Non-Trump)
+        c1 = Card(1, 7) # Ace Hearts (11 in non-trump)
         c2 = Card(0, 4) # Jack Spades (Trump, 20)
         c3 = Card(0, 2) # 9 Spades (Trump, 14)
-        c4 = Card(1, 6) # King Hearts (Non-Trump)
+        c4 = Card(1, 6) # King Hearts (4 in non-trump)
         
         l = Collection([c1, c2, c3, c4])
         l.sort(trump)
         
         # Expected order:
-        # Trumps first: Jack Spades, 9 Spades
-        # Then Hearts: Ace Hearts, King Hearts
+        # Trumps first (by value): Jack Spades (20), 9 Spades (14)
+        # Then non-trump suits sorted by max value, sum, count
+        # Hearts: max=11, sum=15, count=2
+        # Order: Ace Hearts (11), King Hearts (4)
         
-        assert l[0] == c2
-        assert l[1] == c3
-        assert l[2] == c1
-        assert l[3] == c4
+        assert l[0] == c2  # Jack Spades
+        assert l[1] == c3  # 9 Spades
+        assert l[2] == c1  # Ace Hearts
+        assert l[3] == c4  # King Hearts
 
     def test_sort_no_trump(self):
         trump = Trump(TrumpMode.NoTrump, None)
         
-        c1 = Card(0, 7) # Ace Spades (19)
+        c1 = Card(0, 7) # Ace Spades (11)
         c2 = Card(0, 3) # 10 Spades (10)
-        c3 = Card(1, 7) # Ace Hearts (19)
+        c3 = Card(1, 7) # Ace Hearts (11)
         
         l = Collection([c2, c1, c3])
         l.sort(trump)
         
-        # Sorted by suit then value
-        # Spades (0) comes before Hearts (1)
-        # Within Spades: Ace (19) > 10 (10)
+        # No trump, so suits sorted by max value, sum, count
+        # Spades: max=11, sum=21, count=2
+        # Hearts: max=11, sum=11, count=1
+        # Spades comes first (higher sum)
+        # Within Spades: Ace (11) > 10 (10)
         
-        assert l[0] == c1
-        assert l[1] == c2
-        assert l[2] == c3
+        assert l[0] == c1  # Ace Spades
+        assert l[1] == c2  # 10 Spades
+        assert l[2] == c3  # Ace Hearts
+
+    def test_sort_by_max_value(self):
+        # Test sorting by max value
+        trump = Trump(TrumpMode.Regular, 2)  # Diamonds trump
+        
+        c1 = Card(0, 7) # Ace Spades (11)
+        c2 = Card(1, 3) # 10 Hearts (10)
+        c3 = Card(1, 1) # 8 Hearts (0)
+        
+        l = Collection([c2, c3, c1])
+        l.sort(trump)
+        
+        # Spades: max=11, sum=11, count=1
+        # Hearts: max=10, sum=10, count=2
+        # Spades comes first (higher max value)
+        
+        assert l[0] == c1  # Ace Spades
+        assert l[1] == c2  # 10 Hearts
+        assert l[2] == c3  # 8 Hearts
+
+    def test_sort_by_sum_when_max_equal(self):
+        # Test sorting by sum when max values are equal
+        trump = Trump(TrumpMode.Regular, 2)  # Diamonds trump
+        
+        c1 = Card(0, 7) # Ace Spades (11)
+        c2 = Card(1, 7) # Ace Hearts (11)
+        c3 = Card(1, 3) # 10 Hearts (10)
+        
+        l = Collection([c2, c3, c1])
+        l.sort(trump)
+        
+        # Spades: max=11, sum=11, count=1
+        # Hearts: max=11, sum=21, count=2
+        # Hearts comes first (same max, higher sum)
+        
+        assert l[0] == c2  # Ace Hearts
+        assert l[1] == c3  # 10 Hearts
+        assert l[2] == c1  # Ace Spades
+
+    def test_sort_by_count_when_max_and_sum_equal(self):
+        # Test sorting by count when max and sum are equal
+        trump = Trump(TrumpMode.Regular, 2)  # Diamonds trump
+        
+        c1 = Card(0, 7) # Ace Spades (11)
+        c2 = Card(1, 7) # Ace Hearts (11)
+        c3 = Card(3, 7) # Ace Clubs (11)
+        c4 = Card(1, 1) # 8 Hearts (0)
+        
+        l = Collection([c2, c4, c3, c1])
+        l.sort(trump)
+        
+        # Spades: max=11, sum=11, count=1
+        # Hearts: max=11, sum=11, count=2
+        # Clubs: max=11, sum=11, count=1
+        # Hearts comes first (same max, same sum, higher count)
+        # Then Spades (suit 0) before Clubs (suit 3)
+        
+        assert l[0] == c2  # Ace Hearts
+        assert l[1] == c4  # 8 Hearts
+        assert l[2] == c1  # Ace Spades (suit 0 < suit 3)
+        assert l[3] == c3  # Ace Clubs
