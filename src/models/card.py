@@ -49,17 +49,17 @@ class Card:
         elif trump.mode == TrumpMode.AllTrump:
             match self.rank:
                 case 4:  # JACK
-                    return 20
-                case 2:  # NINE
                     return 14
+                case 2:  # NINE
+                    return 9
                 case 7:  # ACE
-                    return 11
+                    return 7
                 case 3:  # TEN
-                    return 10
+                    return 5
                 case 6:  # KING
-                    return 4
-                case 5:  # QUEEN
                     return 3
+                case 5:  # QUEEN
+                    return 2
                 case 1:  # EIGHT
                     return 0
                 case 0:  # SEVEN

@@ -35,18 +35,18 @@ class TestCard:
     def test_card_value_all_trump(self):
         trump = Trump(TrumpMode.AllTrump, None)
         
-        # Jack (rank 4) -> 20
-        assert Card(0, 4).value(trump) == 20
-        # Nine (rank 2) -> 14
-        assert Card(0, 2).value(trump) == 14
-        # Ace (rank 7) -> 11
-        assert Card(0, 7).value(trump) == 11
-        # Ten (rank 3) -> 10
-        assert Card(0, 3).value(trump) == 10
-        # King (rank 6) -> 4
-        assert Card(0, 6).value(trump) == 4
-        # Queen (rank 5) -> 3
-        assert Card(0, 5).value(trump) == 3
+        # Jack (rank 4) -> 14
+        assert Card(0, 4).value(trump) == 14
+        # Nine (rank 2) -> 9
+        assert Card(0, 2).value(trump) == 9
+        # Ace (rank 7) -> 7
+        assert Card(0, 7).value(trump) == 7
+        # Ten (rank 3) -> 5
+        assert Card(0, 3).value(trump) == 5
+        # King (rank 6) -> 3
+        assert Card(0, 6).value(trump) == 3
+        # Queen (rank 5) -> 2
+        assert Card(0, 5).value(trump) == 2
         # 8, 7 -> 0
         assert Card(0, 1).value(trump) == 0
         assert Card(0, 0).value(trump) == 0
