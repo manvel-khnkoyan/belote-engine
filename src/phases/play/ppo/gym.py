@@ -68,7 +68,7 @@ def train_session(args, agents):
 
     print(f"* Collecting experiences for {args.episodes} episodes...")
 
-    # Episode collection loop
+    # Episode Cards loop
     for _ in range(args.episodes):
         deck = get_random_deck()
         trump = Trump.random()

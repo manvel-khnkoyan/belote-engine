@@ -1,6 +1,6 @@
 import pytest
 from trump import Trump, TrumpMode
-from const import Suits
+from suits import Suits
 
 class TestTrump:
     def test_trump_initialization_regular(self):

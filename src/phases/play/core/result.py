@@ -2,12 +2,12 @@ from typing import List, Any
 import pickle
 import json
 from .record import Record
-from src.models.deck import Deck
+from src.models.card import Card
 from src.models.trump import Trump
 
 class Result:
-    def __init__(self, deck: Deck, trump: Trump, records: List[Record]):
-        self.deck = deck
+    def __init__(self, hands: List[List[Card]], trump: Trump, records: List[Record]):
+        self.hands = hands
         self.trump = trump
         self.records = records
         self.scores = [0, 0]  # Team scores

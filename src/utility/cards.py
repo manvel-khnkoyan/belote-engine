@@ -2,31 +2,28 @@ from typing import Optional, Tuple, Iterable
 from src.models.card import Card
 from src.models.trump import Trump
 
-class Collection(list[Card]):
-    def __init__(self, cards: Iterable[Card] = None):
-        super().__init__(cards or [])
+class Cards():
 
-    @property
-    def cards(self) -> list[Card]:
-        return list(self)
-
-    def winner(self, trump: Trump) -> Tuple[Optional[Card], Optional[int]]:
-        if not self:
+    @staticmethod
+    def winner(cards: list[Card], trump: Trump) -> Tuple[Optional[Card], Optional[int]]:
+        if not cards:
             return None, None
             
-        best_idx, best_card = 0, self[0]
-        for i in range(1, len(self)):
-            if self[i].beats(trump, best_card):
-                best_idx, best_card = i, self[i]
+        best_idx, best_card = 0, cards[0]
+        for i in range(1, len(cards)):
+            if cards[i].beats(trump, best_card):
+                best_idx, best_card = i, cards[i]
         return best_card, best_idx
     
-    def value(self, trump: Trump) -> int:
-        return sum(card.value(trump) for card in self)
+    @staticmethod
+    def value(cards: list[Card], trump: Trump) -> int:
+        return sum(card.value(trump) for card in cards)
 
-    def sort(self, trump: Trump) -> "Collection":
+    @staticmethod
+    def sort(cards: list[Card], trump: Trump) -> list[Card]:
         # Calculate max value, sum, and count per suit
         suit_stats = {}
-        for card in self:
+        for card in cards:
             if card.suit not in suit_stats:
                 suit_stats[card.suit] = {'max': 0, 'sum': 0, 'count': 0}
             suit_stats[card.suit]['max'] = max(suit_stats[card.suit]['max'], card.value(trump))
@@ -34,7 +31,7 @@ class Collection(list[Card]):
             suit_stats[card.suit]['count'] += 1
         
         # Sort: trump first, then by max value, sum, count (all descending), suit number, then card value within suit
-        super().sort(key=lambda c: (
+        cards.sort(key=lambda c: (
             c.suit != trump.suit,           # Trump cards first
             -suit_stats[c.suit]['max'],     # Sort suits by max value (highest first)
             -suit_stats[c.suit]['sum'],     # If equal, by sum (highest first)
@@ -43,6 +40,26 @@ class Collection(list[Card]):
             -c.value(trump),                # Within suit, highest value first
             -c.rank                         # Tiebreaker
         ))
-        return self
 
+        return cards
         
+    @staticmethod
+    def suit_canonical_map(cards: list[Card]) -> dict[int, int]:
+        num_suits = 4
+        
+        # Calculate strengths
+        strengths = [0.0] * num_suits
+        counts = [0] * num_suits
+        for card in cards:
+            counts[card.suit] += 1
+            strengths[card.suit] += card.rank
+        
+        for s in range(num_suits):
+            if counts[s]:
+                strengths[s] /= counts[s]
+        
+        # Create mappings
+        ordered = sorted(range(4), key=lambda s: (-strengths[s], s))
+        can_map = {orig: canon for canon, orig in enumerate(ordered)}
+
+        return can_map

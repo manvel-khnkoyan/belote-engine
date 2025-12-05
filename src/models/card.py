@@ -1,5 +1,6 @@
 from src.models.trump import Trump, TrumpMode
-from src.const import Suits, Ranks
+from src.ranks import Ranks
+from src.suits import Suits
 
 class Card:
     def __init__(self, suit: int, rank: int):

@@ -1,9 +1,8 @@
 from typing import List
-from src.models.deck import Deck
-from src.models.trump import Trump, TrumpMode
-from src.models.collection import Collection
+from src.models.trump import Trump
 from src.models.card import Card
-from src.const import Suits
+from src.suits import Suits
+from utility.cards import Cards
 from .rules import Rules
 from .result import Result
 from .agent import Agent
@@ -17,13 +16,10 @@ class Simulator:
         self.agents = agents
         self.display = display
 
-    def simulate(self, deck: Deck, trump: Trump, next_player: int, states: List[State] = []) -> Result:
+    def simulate(self, hands: List[List[Card]], trump: Trump, next_player: int, states: List[State] = []) -> Result:
         # Initialize game state
         self.scores = [0, 0]
         self.trump = trump
-        
-        # Deal and sort hands
-        hands = [Collection(hand).sort(trump) for hand in deck.deal()]
 
         # State
         self.states = states if states else [State(hands[i], trump) for i in range(4)]
@@ -55,7 +51,7 @@ class Simulator:
             action = current_agent.choose_action(current_state, actions)
 
             # Recompute the current table snapshot after observers updated state
-            current_table = Collection(current_state.table)
+            current_table = current_state.table.copy()
 
             #----------------------------#
             #---- Other actions here ----#
@@ -76,10 +72,10 @@ class Simulator:
                 cards_moves += 1
 
                 # Winner card and its index on the table
-                _, winner_table_idx = current_table.winner(trump)
+                _, winner_table_idx = Cards.winner(current_table, trump)
 
                 # Table points
-                table_points = current_table.value(trump)
+                table_points = Cards.value(current_table, trump)
 
                 # Winner player index (absolute). Compute start of trick from
                 # the current player and number of cards on the table, then map
@@ -118,9 +114,9 @@ class Simulator:
 
         self._display_summary()
 
-        return Result(deck, trump, records)
+        return Result(hands, trump, records)
 
-    def _trick_points(self, table: Collection, trump: Trump, last_trick: bool) -> int:
+    def _trick_points(self, table: List[Card], trump: Trump, last_trick: bool) -> int:
         """Calculate points for the current trick"""
         points = sum(card.value(trump) for card in table)
         bonus = 10 if last_trick else 0
@@ -130,7 +126,7 @@ class Simulator:
         """Get player index relative to another player"""
         return (current_player - relative_to) % 4
 
-    def _display_table(self, current_table: Collection):
+    def _display_table(self, current_table: List[Card]):
         if not self.display:
             return
 

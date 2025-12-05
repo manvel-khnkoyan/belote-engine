@@ -3,7 +3,7 @@ from .state import State
 from .actions import Action, ActionPass, ActionPlayCard
 from src.models.card import Card
 from src.models.trump import Trump, TrumpMode
-from src.models.collection import Collection
+from src.utility.cards import Cards
 
 class Rules:        
     def __init__(self):
@@ -34,7 +34,7 @@ class Rules:
     def _valid_play_cards(self, state: State) -> List[Card]:
         """Get list of valid cards the current player can play"""
         cards = state.cards
-        table = Collection(state.table)
+        table = state.table
         trump = state.trump
 
         # Check if the current player has any cards
@@ -49,8 +49,8 @@ class Rules:
         table_lead_suit = table[0].suit
         
         # Get highest trump card on the table
-        # Note: Collection.winner returns (card, index), we need the card
-        table_winner_card, _ = table.winner(trump)
+        # Note: Cards.winner returns (card, index), we need the card
+        table_winner_card, _ = Cards.winner(table, trump)
         
         # Get player's trump cards higher than the table's highest trump card
         # We need to check if table_winner_card is actually a trump or if it's just the current winner

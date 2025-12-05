@@ -1,4 +1,4 @@
-from src.const import Suits
+from src.suits import Suits
 from enum import IntEnum
 
 class TrumpMode(IntEnum):

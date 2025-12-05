@@ -23,7 +23,7 @@ pip install -r requirements.txt
 Run all tests
 
 ```bash
-export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src/models && ./bin/python -m pytest src/models/
+export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src && ./bin/python -m pytest src/
 ``` 
 
 Test individual file
