@@ -7,6 +7,13 @@ class _SuitManager:
         self._transform_map = map
     
     def __getitem__(self, index: int) -> str:
-        return self._suits[self._transform_map[index] if self._transform_map else index]
+        if self._transform_map:
+            # Handle both dict and callable (function) transform maps
+            if callable(self._transform_map):
+                transformed_index = self._transform_map(index)
+            else:
+                transformed_index = self._transform_map[index]
+            return self._suits[transformed_index]
+        return self._suits[index]
 
 Suits = _SuitManager()
