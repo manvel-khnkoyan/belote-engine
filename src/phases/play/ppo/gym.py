@@ -40,9 +40,7 @@ class Gym:
         
         for episode in range(1, episodes + 1):
             # Setup Game
-            deck = Deck()
-            deck.shuffle()
-            hands = deck.deal()
+            hands = Deck.create(shuffle=True)
             
             # Random Trump
             trump_suit = np.random.randint(0, 4)

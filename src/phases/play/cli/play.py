@@ -1,4 +1,6 @@
 import random
+import torch
+from src.phases.play.ppo.agent import PpoAgent
 from src.suits import Suits
 from src.models.card import Card
 from src.models.trump import Trump, TrumpMode
@@ -9,6 +11,7 @@ from src.phases.play.core.simulator import Simulator
 from src.phases.play.core.rules import Rules
 from src.phases.play.helper_agents.human import HumanAgent
 from src.phases.play.helper_agents.random_chooser import RandomChooserAgent
+from src.phases.play.ppo.network import PPONetwork
 
 def main():    
     # Randomly choose trump for demonstration
@@ -26,7 +29,11 @@ def main():
     hands = [[Card(canonical_map[card.suit], card.rank) for card in hand] for hand in hands]
     
     # Initialize agents
-    agents = [HumanAgent() if i == 0 else RandomChooserAgent() for i in range(4)]
+    # agents = [HumanAgent() if i == 0 else RandomChooserAgent() for i in range(4)]
+    network = PPONetwork() 
+    network.load_state_dict(torch.load("models/belote_agent.pt", map_location=torch.device('cpu')))
+
+    agents = [HumanAgent()] + [PpoAgent(network) for _ in range(3)]
 
     # Initialize Simulator
     rules = Rules()

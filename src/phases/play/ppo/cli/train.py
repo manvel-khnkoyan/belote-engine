@@ -11,7 +11,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train Belote PPO Agent")
     parser.add_argument("--episodes", type=int, default=1000, help="Number of episodes to train")
     parser.add_argument("--batch_size", type=int, default=256, help="Batch size for PPO update")
-    parser.add_argument("--model_path", type=str, default="belote_agent.pt", help="Path to save/load model")
+    parser.add_argument("--model_path", type=str, default="models/belote_agent.pt", help="Path to save/load model")
     
     args = parser.parse_args()
     
