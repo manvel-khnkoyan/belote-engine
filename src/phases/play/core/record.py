@@ -6,10 +6,11 @@ from .actions import Action
 Record represents a single played action in the game.
 """
 class Record:
-    def __init__(self, player: int, state: State, action: Action, instant_reward: int, accrued_reward: int):
+    def __init__(self, player: int, state: State, action: Action, log: dict | None, instant_reward: int, accrued_reward: int):
         self.player = player
         self.state = copy.deepcopy(state)
         self.action = copy.deepcopy(action)
+        self.log = copy.deepcopy(log)
         # Rewards are 2: immediate and accrued
         self.instant_reward = instant_reward
         self.accrued_reward = accrued_reward

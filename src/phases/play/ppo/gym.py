@@ -1,164 +1,118 @@
 import os
-import argparse
+import torch
 import numpy as np
-import time
-from src.stages.player.env import BeloteEnv
-from src.stages.player.network import BeloteNetwork
-from src.stages.player.ppo.belote_agent import PPOBeloteAgent
-from src.stages.player.ppo.memory import PPOMemory
-from src.stages.player.helper_agents.randomer import Randomer
-from trump import Trump
-from src.deck import Deck
-from src.stages.player.simulator import simulate
-from src.stages.player.network_monitor import NetworkMonitor
+from typing import List
+from src.utility.deck import Deck
+from src.models.trump import Trump, TrumpMode
+from src.phases.play.core.simulator import Simulator
+from src.phases.play.core.rules import Rules
+from src.phases.play.core.record import Record
+from src.phases.play.ppo.agent import PpoAgent
+from src.phases.play.ppo.network import PPONetwork
+from src.phases.play.helper_agents.random_chooser import RandomChooserAgent
 
-def parse_args():
-    root = os.environ.get("PROJECT_ROOT")
-    save_path = os.path.join(root, 'models')
-    os.makedirs(save_path, exist_ok=True)
-
-    parser = argparse.ArgumentParser(description="Train a Belote agent using cyclic self-play PPO")
-    parser.add_argument("--episodes", type=int, default=10*640, help="Number of episodes per training session")
-    parser.add_argument("--sessions", type=int, default=5, help="Number of training sessions/cycles")
-    parser.add_argument("--batch-size", type=int, default=640, help="Batch size for PPO updates")
-    parser.add_argument("--save-path", type=str, default=save_path, help="Path to save models")
-    parser.add_argument("--load-path", type=str, default=None, help="Path to load existing model to start from")
-    return parser.parse_args()
-
-def get_random_deck():
-    """Get a random deck of cards for the game"""
-    deck = Deck()
-    deck.reset()
-    deck.deal_cards(8)
-    return deck
-
-def create_agents(model_path=None):
-    agents = []
-    for _ in range(4):
-        agent = PPOBeloteAgent(BeloteNetwork(), PPOMemory())
-        if model_path is not None:
-            agent.load(model_path)
-        agents.append(agent)
-    
-    # The first agent is our main training agent, others are opponents
-    return agents
-
- # Callback for when a trick ends to update rewards
-def create_on_trick_end(env, agents):
-    # Calculate the point differential for the trick
-    # trick_scores[0] is team 0 (our agent's team)
-    # trick_scores[1] is team 1 (opponent team)
-    trick_reward = env.trick_scores[0] - env.trick_scores[1]
-
-    # Normalize the reward to a smaller, more stable range (e.g., -1 to 1)
-    # Max possible points in a trick is around 30-50. Let's use a conservative normalizer.
-    normalized_reward = trick_reward / 50.0
-
-    # The agent played one of the last 4 cards. We give the reward to the last action.
-    agents[0].memory.updated_last_rewards(normalized_reward, last_n=1)
-
-def train_session(args, agents):
-    """Optimized training session with better monitoring"""
-
-    # Set memory for the main agent
-    agents[0].memory = PPOMemory()
-    seed = int(time.time()) % 1000
-    wins = 0
-    rate = 0
-
-    print(f"* Collecting experiences for {args.episodes} episodes...")
-
-    # Episode Cards loop
-    for _ in range(args.episodes):
-        deck = get_random_deck()
-        trump = Trump.random()
-        next_player = int(np.random.default_rng(seed).integers(0, 4))
-        env = BeloteEnv(trump, deck, next_player=next_player)
-
-        # Create the on_trick_end callback
-        on_trick_end = create_on_trick_end(env, agents)
-
-        # simulate
-        simulate(env, agents, on_trick_end=on_trick_end, display=False)
-
-        # Get scores from environment after simulation
-        team0_score, team1_score = env.total_scores[0], env.total_scores[1]
-        total_score = team0_score + team1_score
-
-        wins += 1 if team0_score > team1_score else 0
-        rate = team0_score / total_score
-
-        # Reduce signal amplification to lower KL divergence
-        reward = (team0_score - team1_score) / total_score
-        reward = reward * 1.5  # Reduced from 2.0 for more stable learning
-        agents[0].memory.updated_last_rewards(reward, last_n=2)
-
-    print(f"* Experiences completed: {wins}/{args.episodes} rate ({rate:.1f}%)")
-    print()
-    
-    print("[ Learning started ]")
-
-    # Create batches of indices from 0 to indices_size
-    seed += 1
-    memory = agents[0].memory
-    indices_size = len(memory)
-    rng = np.random.default_rng(seed=seed)
-    indices_shuffled = rng.permutation(indices_size)
-    for i in range(0, indices_size, args.batch_size):
-        indices = indices_shuffled[i:i + args.batch_size]
-        # learn by sequential sampling
-        agents[0].learn(memory.sample(indices))
-
-        # Display diagnostics
-        agents[0].ppo.display_diagnostics()
-
-    # Print progress - Remove the problematic entropy/KL calculation
-    # The original code was trying to access 'entropy' and 'kl_divergence' from memory.actions,
-    # but memory.actions contains integers (action IDs), not dictionaries
-    print("[ Learning completed ]")
-
-
-def train(args):
-    """Main training function with cyclic self-play"""
-    print("Starting cyclic self-play training:")
-    print(f" . Sessions: {args.sessions}")
-    print(f" . Episodes per session: {args.episodes}")
-    print(f" . Batch size: {args.batch_size}")
-    print(f" . Save path: {args.save_path}")
-    
-    # Initialize model path
-    current_model_path = args.load_path if args.load_path else None
-
-    # Initialize agents
-    agents = []
-    
-    for session in range(1, args.sessions + 1):
-        print(f"\n====== SESSION {session} ======")
-
-        # Create agents for this session
-        agents = create_agents(
-            model_path=current_model_path,
-        )
+class Gym:
+    def __init__(self, model_path: str = None):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Train for this session
-        train_session(args, agents)
+        # Initialize Network and Agent
+        self.network = PPONetwork().to(self.device)
+        self.agent = PpoAgent(self.network)
         
-        # Save the model after this session
-        session_model_path = os.path.join(args.save_path, f"belote_agent_session_{session}.pt")
-        agents[0].save(session_model_path)
+        if model_path and os.path.exists(model_path):
+            try:
+                self.load_model(model_path)
+                print(f"Loaded model from {model_path}")
+            except Exception as e:
+                print(f"Could not load model from {model_path}: {e}")
+            
+        # Initialize Opponents
+        self.opponents = [RandomChooserAgent() for _ in range(3)]
         
-        # Update current model path for next session
-        current_model_path = session_model_path
-    
-    # Save the final model
-    final_path = os.path.join(args.save_path, "belote_agent.pt")
-    agents[0].save(final_path)
+        # Rules
+        self.rules = Rules()
 
-    print("\n====== TRAINING COMPLETED ======")
-    print(f"Total sessions: {args.sessions}")
-    print(f"Model saved to: {final_path}")
+    def train(self, episodes: int = 1000, batch_size: int = 64, save_path: str = "model.pt"):
+        print(f"Starting training for {episodes} episodes...")
+        
+        buffer: List[Record] = []
+        total_rewards = []
+        
+        for episode in range(1, episodes + 1):
+            # Setup Game
+            deck = Deck()
+            deck.shuffle()
+            hands = deck.deal()
+            
+            # Random Trump
+            trump_suit = np.random.randint(0, 4)
+            trump = Trump(TrumpMode.Regular, trump_suit)
+            
+            # Assign Agents (PPO is player 0)
+            agents = [self.agent] + self.opponents
+            
+            # Simulate
+            simulator = Simulator(self.rules, agents, display=False)
+            # Assuming player 0 starts for simplicity, or random
+            start_player = np.random.randint(0, 4)
+            
+            result = simulator.simulate(hands, trump, start_player)
+            
+            # Filter records for PPO agent (player 0)
+            agent_records = [r for r in result.records if r.player == 0]
+            
+            # Compute GAE and update logs
+            self._compute_gae(agent_records)
+            
+            buffer.extend(agent_records)
+            
+            # Track performance
+            episode_reward = sum(r.instant_reward for r in agent_records) + (agent_records[-1].accrued_reward if agent_records else 0)
+            total_rewards.append(episode_reward)
+            
+            # Train if buffer is full
+            if len(buffer) >= batch_size:
+                self.agent.learn(buffer)
+                buffer = [] # Clear buffer after update (On-Policy)
+                
+            if episode % 10 == 0:
+                avg_reward = np.mean(total_rewards[-10:])
+                print(f"Episode {episode}/{episodes} | Avg Reward: {avg_reward:.2f}")
+                
+            if episode % 100 == 0 and save_path:
+                self.save_model(save_path)
+                
+        if save_path:
+            self.save_model(save_path)
+            print(f"Training complete. Model saved to {save_path}")
 
+    def _compute_gae(self, records: List[Record], gamma=0.99, lam=0.95):
+        """
+        Compute Generalized Advantage Estimation (GAE) and Returns.
+        Updates record.log with 'advantage' and 'return'.
+        """
+        if not records:
+            return
+            
+        values = [r.log['value'] for r in records]
+        rewards = [r.instant_reward for r in records]
+        
+        # Add final accrued reward to the last reward
+        rewards[-1] += records[-1].accrued_reward
+        
+        # Append 0 for value of terminal state
+        values.append(0.0)
+        
+        gae = 0
+        for i in reversed(range(len(records))):
+            delta = rewards[i] + gamma * values[i+1] - values[i]
+            gae = delta + gamma * lam * gae
+            
+            records[i].log['advantage'] = gae
+            records[i].log['return'] = gae + values[i]
 
-if __name__ == "__main__":
-    args = parse_args()
-    train(args)
+    def save_model(self, path: str):
+        self.network.save(path)
+
+    def load_model(self, path: str):
+        self.network.load(path)

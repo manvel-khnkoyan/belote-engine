@@ -2,7 +2,7 @@ from typing import List
 from src.models.trump import Trump
 from src.models.card import Card
 from src.suits import Suits
-from utility.cards import Cards
+from src.utility.cards import Cards
 from .rules import Rules
 from .result import Result
 from .agent import Agent
@@ -48,7 +48,7 @@ class Simulator:
             actions = self.rules.actions(current_state)
             
             # Agent chooses action
-            action = current_agent.choose_action(current_state, actions)
+            action, log = current_agent.choose_action(current_state, actions)
 
             # Recompute the current table snapshot after observers updated state
             current_table = current_state.table.copy()
@@ -89,7 +89,7 @@ class Simulator:
                 player_last_card_played_record_index[current_player] = len(records)
 
                 # Append record
-                records.append(Record(current_player, current_state, action, instant_reward, 0))
+                records.append(Record(current_player, current_state, action, log, instant_reward, 0))
 
                 # Continue to next player
                 next_player = (current_player + 1) % 4

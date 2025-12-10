@@ -1,13 +1,13 @@
 
-from sre_parse import State
-from typing import List
+from src.phases.play.core.state import State
+from typing import List, Tuple, Dict, Any
 from src.phases.play.core.agent import Agent
 from src.phases.play.core.actions import Action, ActionPlayCard
 
 class HumanAgent(Agent):
     """Human player agent that prompts for input"""
     
-    def choose_action(self, state: State, actions: List[Action]) -> Action:
+    def choose_action(self, state: State, actions: List[Action]) -> Tuple[Action, Dict[str, Any] | None]:
         """Prompt human player to choose an action"""
         # Filter valid play card actions
         valid_play_actions = [action for action in actions if isinstance(action, ActionPlayCard)]
@@ -23,7 +23,7 @@ class HumanAgent(Agent):
         self._display_options(player_hand, valid_cards)
         
         # Get user input
-        return self._get_user_choice(player_hand, valid_cards, valid_play_actions)
+        return self._get_user_choice(player_hand, valid_cards, valid_play_actions), None
     
     def _display_options(self, player_hand: List, valid_cards: List):
         """Display player's hand with valid card indices"""
