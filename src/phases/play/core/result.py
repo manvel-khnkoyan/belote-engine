@@ -1,18 +1,23 @@
-from typing import List, Any
+from copy import deepcopy
+import os
+from typing import List
 import pickle
-import json
 from .record import Record
 from src.models.card import Card
 from src.models.trump import Trump
 
 class Result:
     def __init__(self, hands: List[List[Card]], trump: Trump, records: List[Record]):
-        self.hands = hands
-        self.trump = trump
+        self.hands = deepcopy(hands)
+        self.trump = deepcopy(trump)
         self.records = records
         self.scores = [0, 0]  # Team scores
 
     def save(self, path: str):
+        # Remove existing file to avoid conflicts
+        if os.path.exists(path):
+            os.remove(path)
+
         with open(path, 'wb') as f:
             pickle.dump(self, f)
 

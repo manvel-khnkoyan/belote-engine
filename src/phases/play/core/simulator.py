@@ -153,6 +153,8 @@ class Simulator:
         self._display_line()
         
     def _display_line(self):
+        if not self.display:
+            return
         """Display a hash separator"""
         print("")
         print("-----------------------------------------")

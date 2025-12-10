@@ -9,7 +9,7 @@ State is personal from first person view.
 """
 class State:
     def __init__(self, cards: List[Card], trump: Trump, probability=Probability()):
-        self.cards = cards
+        self.cards = list(cards)
         self.trump = trump
         self.round = 0
         self.table = []

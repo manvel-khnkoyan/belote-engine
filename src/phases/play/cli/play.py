@@ -1,5 +1,6 @@
 import random
 import torch
+from src.phases.play.cli.utils.main import transform_canonical
 from src.phases.play.ppo.agent import PpoAgent
 from src.suits import Suits
 from src.models.card import Card
@@ -19,14 +20,6 @@ def main():
 
     # Hands
     hands = [Cards.sort(hand, trump) for hand in Deck.create()]
-
-    # Create canonical mapping based on player 0's hand
-    canonical_map = Canonical.create_transform_map(hands[0])
-    
-    # Transform trump and hands using canonical mapping
-    Suits.transform(canonical_map)
-    trump = Trump(trump.mode, canonical_map[trump.suit]) if trump.mode != TrumpMode.NoTrump else trump
-    hands = [[Card(canonical_map[card.suit], card.rank) for card in hand] for hand in hands]
     
     # Initialize agents
     # agents = [HumanAgent() if i == 0 else RandomChooserAgent() for i in range(4)]
@@ -38,7 +31,10 @@ def main():
     # Initialize Simulator
     rules = Rules()
     simulator = Simulator(rules, agents, display=True)
-    
+
+    # Transform to canonical form
+    trump, hands = transform_canonical(trump, hands)
+
     print("")
     print("Starting Belote Game Simulation...")
     print(f"Trump is {trump}")

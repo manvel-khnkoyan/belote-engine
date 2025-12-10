@@ -2,7 +2,9 @@ import os
 import torch
 import numpy as np
 from typing import List
+from src.models.card import Card
 from src.utility.deck import Deck
+from src.utility.canonical import Canonical
 from src.models.trump import Trump, TrumpMode
 from src.phases.play.core.simulator import Simulator
 from src.phases.play.core.rules import Rules
@@ -45,6 +47,11 @@ class Gym:
             # Random Trump
             trump_suit = np.random.randint(0, 4)
             trump = Trump(TrumpMode.Regular, trump_suit)
+
+            # Convert Canonical
+            canonical = Canonical.create_transform_map(hands[0])
+            trump.suit = canonical[trump.suit] if trump.suit is not None else None
+            hands = [[Card(canonical[card.suit], card.rank) for card in hand] for hand in hands]
             
             # Assign Agents (PPO is player 0)
             agents = [self.agent] + self.opponents

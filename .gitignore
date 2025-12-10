@@ -3,7 +3,7 @@ __models__
 bin
 /include
 /models
-/history
+/records
 lib
 share
 *.pth
