@@ -1,5 +1,7 @@
 import random
 import torch
+import argparse
+import os
 from src.phases.play.cli.utils.main import transform_canonical
 from src.phases.play.ppo.agent import PpoAgent
 from src.suits import Suits
@@ -14,7 +16,11 @@ from src.phases.play.helper_agents.human import HumanAgent
 from src.phases.play.helper_agents.random_chooser import RandomChooserAgent
 from src.phases.play.ppo.network import PPONetwork
 
-def main():    
+def main():
+    parser = argparse.ArgumentParser(description="Play Belote against PPO Agent")
+    parser.add_argument("--model", type=str, default="models/model.pt", help="Path to the trained model file")
+    args = parser.parse_args()
+
     # Randomly choose trump for demonstration
     trump = Trump(TrumpMode.Regular, random.randint(0,3))
 
@@ -22,9 +28,10 @@ def main():
     hands = [Cards.sort(hand, trump) for hand in Deck.create()]
     
     # Initialize agents
-    # agents = [HumanAgent() if i == 0 else RandomChooserAgent() for i in range(4)]
-    network = PPONetwork() 
-    network.load_state_dict(torch.load("models/belote_agent.pt", map_location=torch.device('cpu')))
+    network = PPONetwork()
+    
+    network.load_state_dict(torch.load(args.model, map_location=torch.device('cpu')))
+    print(f"Loaded model from {args.model}")
 
     agents = [HumanAgent()] + [PpoAgent(network) for _ in range(3)]
 

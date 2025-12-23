@@ -1,182 +1,214 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from src.phases.play.core.state import State
+
 
 class PPONetwork(nn.Module):
-    def __init__(self, state_dim=128, card_emb_dim=16, hidden_dim=128):
-        super(PPONetwork, self).__init__()
-        
-        # Constants
+    """
+    Action-Specific Network with Separate Play Cases.
+    
+    INPUTS: Probabilities [B, 128] (Game History)
+    
+    ACTION TYPE CLASSIFIER: Probabilities → Action Type (play, declare, etc.)
+    
+    PLAY ACTION NETWORK:
+    ├── CASE 1: LEAD (0 table cards)
+    │   └─ Fusion(Hand, Probabilities) → Card Policy
+    ├── CASE 2: FOLLOW (1 table card)
+    │   └─ Fusion(Hand, Table_Emb[1], Probabilities) → Card Policy
+    ├── CASE 3: FOLLOW (2 table cards)
+    │   └─ Fusion(Hand, Table_Emb[2], Probabilities) → Card Policy
+    └── CASE 4: CLEANUP (3 table cards)
+        └─ Fusion(Hand, Table_Emb[3], Probabilities) → Card Policy
+    """
+
+    def __init__(self, state_dim=128, hidden_dim=128, card_emb_dim=16, dropout=0.1):
+        super().__init__()
+
         self.num_cards = 32
-        self.num_ranks = 8
         self.card_emb_dim = card_emb_dim
-        
-        # --- 1. Embeddings ---
-        # 0-31: Regular cards
-        # 32-35: Trump Suit Modifiers (Spades, Hearts, Diamonds, Clubs)
-        # 36: Padding/Empty slot
-        # We use an additive embedding approach: Card Embedding + Trump Suit Modifier (if trump)
+        self.hidden_dim = hidden_dim
+
+        # Card embeddings for table cards
         self.card_embedding = nn.Embedding(37, card_emb_dim, padding_idx=36)
-        
-        # --- 2. Input Encoders ---
-        
-        # Cards Held Encoder
-        # Input: 32 (Multi-hot vector of cards in hand)
-        self.hand_encoder = nn.Sequential(
-            nn.Linear(32, hidden_dim),
-            nn.LayerNorm(hidden_dim),
+
+        # ============ ACTION TYPE CLASSIFIER ============
+        self.action_classifier = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.1)
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 2),  # 0: play, 1: declare (future)
         )
 
-        # Shared State Encoder
-        # Encodes the game history (probabilities) and trump information
-        # Input: state_dim (128) + trump_info (5)
-        self.state_encoder = nn.Sequential(
-            nn.Linear(state_dim + 5, hidden_dim),
+        # ============ PROBABILITY ENCODER (Hand representation) ============
+        self.prob_encoder = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.1)
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+        )
+
+        # ============ TABLE ENCODERS (for each play case) ============
+        # Each case has its own table encoder for the specific number of cards
+        self.table_encoder_1card = nn.Sequential(
+            nn.Linear(card_emb_dim * 4, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
         )
         
-        # --- 3. Stage-Specific Layers (The "Genius" Architecture) ---
-        # We separate the network into 4 distinct branches based on the number of cards on the table (0, 1, 2, 3).
-        # This allows the agent to learn distinct strategies for Leading, Second, Third, and Last positions.
-        self.stage_layers = nn.ModuleList([
-            nn.Sequential(
-                # Input: Hand Features + Shared Features + Flattened Table Embeddings (i * card_emb_dim)
-                nn.Linear(hidden_dim * 2 + (i * card_emb_dim), hidden_dim),
-                nn.LayerNorm(hidden_dim),
-                nn.ReLU(),
-                nn.Dropout(0.1)
-            ) for i in range(4)
-        ])
+        self.table_encoder_2card = nn.Sequential(
+            nn.Linear(card_emb_dim * 4, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
         
-        # --- 4. Action Heads ---
-        # Separate Policy Heads for each stage to further specialize the decision making
-        self.play_heads = nn.ModuleList([
-            nn.Linear(hidden_dim, self.num_cards) for _ in range(4)
-        ])
-        
-        # Shared Heads for other tasks
-        # Using combined features (Hand + State)
-        self.bid_head = nn.Linear(hidden_dim * 2, 9)       # Assuming 9 bid types
-        self.announce_head = nn.Linear(hidden_dim * 2, 10) # Assuming 10 announce types
-        self.value_head = nn.Linear(hidden_dim * 2, 1)     # Critic
+        self.table_encoder_3card = nn.Sequential(
+            nn.Linear(card_emb_dim * 4, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
 
-        self._init_weights()
+        # ============ CASE-SPECIFIC FUSION NETWORKS ============
+        # CASE 1: LEAD (0 table cards) - fusion of hand + probabilities only
+        self.case1_fusion = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
 
-    def save(self, path: str):
-        torch.save(self.state_dict(), path)
+        # CASE 2: FOLLOW (1 table card) - fusion of hand + table[1] + probabilities
+        self.case2_fusion = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
 
-    def load(self, path: str):
-        device = next(self.parameters()).device
-        self.load_state_dict(torch.load(path, map_location=device))
+        # CASE 3: FOLLOW (2 table cards) - fusion of hand + table[2] + probabilities
+        self.case3_fusion = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
 
-    def _init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Embedding):
-                nn.init.normal_(m.weight, mean=0.0, std=0.02)
+        # CASE 4: CLEANUP (3 table cards) - fusion of hand + table[3] + probabilities
+        self.case4_fusion = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
 
-    def _get_card_embeddings(self, tables, trumps):
+        # ============ OUTPUT HEADS ============
+        self.card_head = nn.Linear(hidden_dim, self.num_cards)
+        self.bid_head = nn.Linear(hidden_dim, 9)
+        self.announce_head = nn.Linear(hidden_dim, 10)
+        self.value_head = nn.Linear(hidden_dim, 1)
+
+    def _embed_table(self, tables: torch.Tensor):
         """
-        Computes embeddings by adding a 'Trump Suit Modifier' to the base card embedding
-        if the card is a trump card.
+        Embed table cards.
+        
+        Args:
+            tables: [B, 4] with card ids 0..31; empty slots are -1
+            
+        Returns:
+            table_flat: [B, 4*card_emb_dim]
+            counts: [B] number of valid cards
         """
-        # 1. Base Embeddings
-        valid_mask = (tables >= 0) & (tables < 32)
-        base_indices = tables.clone()
-        base_indices[~valid_mask] = 36 # Padding
-        base_embeddings = self.card_embedding(base_indices)
-        
-        # 2. Identify Trump Cards
-        # trumps: [B, 5] -> [Mode, S0, S1, S2, S3]
-        is_regular_mode = (trumps[:, 0] < 0.5)
-        trump_suits = torch.argmax(trumps[:, 1:], dim=1) # [B]
-        
-        trump_suits_exp = trump_suits.unsqueeze(1).expand_as(tables)
-        is_regular_mode_exp = is_regular_mode.unsqueeze(1).expand_as(tables)
-        
-        card_suits = torch.div(tables, self.num_ranks, rounding_mode='floor')
-        is_trump_suit = (card_suits == trump_suits_exp)
-        is_trump_card = is_regular_mode_exp & is_trump_suit & valid_mask
-        
-        # 3. Trump Modifiers
-        # Indices 32-35 correspond to Spades, Hearts, Diamonds, Clubs modifiers
-        safe_suits = card_suits.clone()
-        safe_suits[~valid_mask] = 0 # Avoid out of bounds
-        modifier_indices = 32 + safe_suits
-        
-        modifier_embeddings = self.card_embedding(modifier_indices)
-        
-        # Add modifier only where card is trump
-        final_embeddings = base_embeddings + (modifier_embeddings * is_trump_card.unsqueeze(-1).float())
-        
-        return final_embeddings, valid_mask
+        B = tables.size(0)
 
-    def forward(self, hand, probabilities, tables, trumps):
+        # Mark valid cards
+        valid = (tables >= 0) & (tables < 32)  # [B, 4]
+        idx = tables.clone()
+        idx[~valid] = 36  # padding token
+
+        # Embed and zero out empty slots
+        card_emb = self.card_embedding(idx)  # [B, 4, card_emb_dim]
+        card_emb = card_emb * valid.unsqueeze(-1).float()
+
+        # Flatten
+        table_flat = card_emb.reshape(B, -1)  # [B, 4*card_emb_dim]
+        counts = valid.sum(dim=1)  # [B]
+
+        return table_flat, counts
+
+    def forward(self, state: State):
         """
-        hand: [B, 32] - Multi-hot vector of cards in hand
-        probabilities: [B, 128] - Game state/history
-        tables: [B, 4] - Card IDs (0-31) on table. Use -1 or 64 for empty slots.
-        trumps: [B, 5] - Trump encoding
+        Forward pass with separate case-specific networks.
+        
+        Args:
+            state: State object with probabilities [B, 128] and tables [B, 4]
+        
+        Returns:
+            dict with card_policy, bid_policy, announce_policy, value
         """
-        B = probabilities.shape[0]
+        probabilities = state.probabilities  # [B, 128]
+        tables = state.tables  # [B, 4]
+
+        B = probabilities.size(0)
         device = probabilities.device
+
+        # ============ ACTION TYPE CLASSIFICATION ============
+        self.action_classifier(probabilities.float())  # [B, 2]
+
+        # ============ ENCODE HAND (from probabilities) ============
+        hand_encoded = self.prob_encoder(probabilities.float())  # [B, hidden_dim]
+
+        # ============ EMBED TABLE ============
+        table_flat, counts = self._embed_table(tables)  # table_flat: [B, 4*card_emb_dim]
         
-        # 1. Encode Inputs
-        hand_features = self.hand_encoder(hand) # [B, H]
-        
-        state_input = torch.cat([probabilities, trumps], dim=1)
-        shared_features = self.state_encoder(state_input) # [B, H]
-        
-        # 2. Process Table Cards
-        table_embeddings, valid_mask = self._get_card_embeddings(tables, trumps)
-        
-        # 3. Route by Table Count (The "Genius" Branching)
-        # Count valid cards to determine the stage (0, 1, 2, or 3 cards on table)
-        counts = valid_mask.sum(dim=1) # [B]
-        
+        # Determine play case based on number of table cards
+        stage_counts = torch.clamp(counts, 0, 3)  # [B]
+
+        # Initialize card logits
         card_logits = torch.zeros(B, self.num_cards, device=device)
-        
-        # Iterate over stages and process relevant batch items
-        for stage in range(4):
-            mask = (counts == stage)
-            if not mask.any():
-                continue
-                
-            # Filter batch for this stage
-            sub_hand = hand_features[mask]
-            sub_state = shared_features[mask]
-            
-            if stage == 0:
-                # No cards on table
-                stage_input = torch.cat([sub_hand, sub_state], dim=1)
-            else:
-                # Flatten the first 'stage' cards
-                sub_table = table_embeddings[mask, :stage].reshape(mask.sum(), -1)
-                stage_input = torch.cat([sub_hand, sub_state, sub_table], dim=1)
-            
-            # Pass through specialized layer and head
-            out = self.stage_layers[stage](stage_input)
-            logits = self.play_heads[stage](out)
-            
-            card_logits[mask] = logits
-            
-        # 4. Other Heads (Shared Context)
-        combined_features = torch.cat([hand_features, shared_features], dim=1)
-        
-        bid_logits = self.bid_head(combined_features)
-        announce_logits = self.announce_head(combined_features)
-        value = self.value_head(combined_features)
-        
+
+        # ============ CASE 1: LEAD (0 table cards) ============
+        case1_mask = (stage_counts == 0)
+        if case1_mask.any():
+            hand_case1 = hand_encoded[case1_mask]  # [b, hidden_dim]
+            fused_case1 = self.case1_fusion(hand_case1)
+            card_logits[case1_mask] = self.card_head(fused_case1)
+
+        # ============ CASE 2: FOLLOW (1 table card) ============
+        case2_mask = (stage_counts == 1)
+        if case2_mask.any():
+            hand_case2 = hand_encoded[case2_mask]  # [b, hidden_dim]
+            table_case2 = self.table_encoder_1card(table_flat[case2_mask])  # [b, hidden_dim]
+            fused_input_case2 = torch.cat([hand_case2, table_case2], dim=-1)  # [b, 2*hidden_dim]
+            fused_case2 = self.case2_fusion(fused_input_case2)
+            card_logits[case2_mask] = self.card_head(fused_case2)
+
+        # ============ CASE 3: FOLLOW (2 table cards) ============
+        case3_mask = (stage_counts == 2)
+        if case3_mask.any():
+            hand_case3 = hand_encoded[case3_mask]  # [b, hidden_dim]
+            table_case3 = self.table_encoder_2card(table_flat[case3_mask])  # [b, hidden_dim]
+            fused_input_case3 = torch.cat([hand_case3, table_case3], dim=-1)  # [b, 2*hidden_dim]
+            fused_case3 = self.case3_fusion(fused_input_case3)
+            card_logits[case3_mask] = self.card_head(fused_case3)
+
+        # ============ CASE 4: CLEANUP (3 table cards) ============
+        case4_mask = (stage_counts == 3)
+        if case4_mask.any():
+            hand_case4 = hand_encoded[case4_mask]  # [b, hidden_dim]
+            table_case4 = self.table_encoder_3card(table_flat[case4_mask])  # [b, hidden_dim]
+            fused_input_case4 = torch.cat([hand_case4, table_case4], dim=-1)  # [b, 2*hidden_dim]
+            fused_case4 = self.case4_fusion(fused_input_case4)
+            card_logits[case4_mask] = self.card_head(fused_case4)
+
+        # ============ OTHER POLICY HEADS (use hand encoding) ============
         return {
-            'card_policy': card_logits,
-            'bid_policy': bid_logits,
-            'announce_policy': announce_logits,
-            'value': value
+            "card_policy": card_logits,  # [B, 32]
+            "bid_policy": self.bid_head(hand_encoded),  # [B, 9]
+            "announce_policy": self.announce_head(hand_encoded),  # [B, 10]
+            "value": self.value_head(hand_encoded),  # [B, 1]
         }

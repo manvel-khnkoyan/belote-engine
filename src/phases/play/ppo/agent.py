@@ -1,56 +1,50 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
+from collections import namedtuple
 
 from src.phases.play.core.agent import Agent
 from src.phases.play.core.state import State
 from src.phases.play.core.actions import Action, ActionPlayCard
 from src.phases.play.core.record import Record
-from src.models.trump import TrumpMode
 from src.phases.play.ppo.network import PPONetwork
+
+# Simple container for batched state tensors
+BatchedState = namedtuple('BatchedState', ['probabilities', 'tables'])
+
 
 class PpoAgent(Agent):
     def __init__(self, network: PPONetwork):
         self.network = network
         self.device = next(network.parameters()).device
-        self.optimizer = torch.optim.Adam(network.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.Adam(network.parameters(), lr=1e-4, weight_decay=1e-5)
 
     def choose_action(self, state: State, actions: List[Action]) -> Tuple[Action, Dict[str, Any] | None]:
         """
         Choose an action based on the current game state.
         """
-        # 1. Prepare Inputs
-        hand_tensor = self._prepare_hand(state.cards)
-        prob_tensor = self._prepare_probability(state.probability)
-        table_tensor = self._prepare_table(state.table)
-        trump_tensor = self._prepare_trump(state.trump)
+        # Prepare state for network
+        state_batch = self._batch_state(state)
 
-        # 2. Forward Pass
-        # Add batch dimension [1, ...]
+        # Forward Pass
         with torch.no_grad():
-            outputs = self.network(
-                hand_tensor.unsqueeze(0), 
-                prob_tensor.unsqueeze(0), 
-                table_tensor.unsqueeze(0), 
-                trump_tensor.unsqueeze(0)
-            )
+            outputs = self.network(state_batch)
         
-        # 3. Mask Invalid Actions
-        # We only handle ActionPlayCard for the network's card_policy head
-        card_logits = outputs['card_policy'][0] # [32]
-        
-        valid_indices = []
-        action_map = {}
+        # Get card policy logits
+        card_logits = outputs['card_policy'][0]  # [32]
         
         # Filter for PlayCard actions
         play_card_actions = [a for a in actions if isinstance(a, ActionPlayCard)]
         
         if not play_card_actions:
-            # If no card play actions (e.g. only Pass?), pick the first available action
-            # and return no log (not training on non-play actions yet)
+            # No card play actions available, return first action
             return actions[0], None
 
+        # Create mask for valid actions
+        valid_indices = []
+        action_map = {}
+        
         for action in play_card_actions:
             idx = action.card.suit * 8 + action.card.rank
             valid_indices.append(idx)
@@ -63,14 +57,14 @@ class PpoAgent(Agent):
         masked_logits = card_logits + mask
         probs = torch.softmax(masked_logits, dim=0)
         
-        # 4. Sample Action
+        # Sample action
         dist = torch.distributions.Categorical(probs)
         action_idx_tensor = dist.sample()
         action_idx = action_idx_tensor.item()
         
         chosen_action = action_map[action_idx]
         
-        # 5. Prepare Logs
+        # Prepare logs for training
         log_prob = dist.log_prob(action_idx_tensor)
         value = outputs['value'][0]
         
@@ -78,10 +72,8 @@ class PpoAgent(Agent):
             'log_prob': log_prob.item(),
             'value': value.item(),
             'state': {
-                'hand': hand_tensor.cpu().numpy(),
-                'probability': prob_tensor.cpu().numpy(),
-                'table': table_tensor.cpu().numpy(),
-                'trump': trump_tensor.cpu().numpy()
+                'probabilities': state_batch.probabilities.cpu().numpy() if isinstance(state_batch.probabilities, torch.Tensor) else state_batch.probabilities,
+                'tables': state_batch.tables.cpu().numpy() if isinstance(state_batch.tables, torch.Tensor) else state_batch.tables,
             },
             'action_idx': action_idx,
             'mask': mask.cpu().numpy()
@@ -92,7 +84,7 @@ class PpoAgent(Agent):
     def learn(self, records: List[Record]):
         """
         Train the agent based on the collected records.
-        Assumes record.log contains 'advantage' and 'return' keys computed by the caller.
+        Assumes record.log contains 'advantage' and 'return' keys.
         """
         if not records:
             return
@@ -104,22 +96,25 @@ class PpoAgent(Agent):
         max_grad_norm = 0.5
         ppo_epochs = 4
         
-        # 1. Collate data into tensors
-        # States
-        hands = torch.tensor(np.array([r.log['state']['hand'] for r in records]), dtype=torch.float32, device=self.device)
-        probs = torch.tensor(np.array([r.log['state']['probability'] for r in records]), dtype=torch.float32, device=self.device)
-        tables = torch.tensor(np.array([r.log['state']['table'] for r in records]), dtype=torch.long, device=self.device)
-        trumps = torch.tensor(np.array([r.log['state']['trump'] for r in records]), dtype=torch.float32, device=self.device)
+        # Collate data into tensors
+        probs = torch.tensor(
+            np.array([r.log['state']['probabilities'] for r in records]), 
+            dtype=torch.float32, 
+            device=self.device
+        ).squeeze(1)
+        tables = torch.tensor(
+            np.array([r.log['state']['tables'] for r in records]), 
+            dtype=torch.long, 
+            device=self.device
+        ).squeeze(1)
         
         # Actions & Old Log Probs
         actions = torch.tensor([r.log['action_idx'] for r in records], dtype=torch.long, device=self.device)
         old_log_probs = torch.tensor([r.log['log_prob'] for r in records], dtype=torch.float32, device=self.device)
         masks = torch.tensor(np.array([r.log['mask'] for r in records]), dtype=torch.float32, device=self.device)
         
-        # Targets (Assumed to be present in logs)
+        # Targets
         if 'advantage' not in records[0].log or 'return' not in records[0].log:
-            # If advantages are not pre-calculated, we cannot proceed with PPO update in this structure
-            # For now, we assume the caller handles GAE or return calculation and augments the logs
             return
 
         advantages = torch.tensor([r.log['advantage'] for r in records], dtype=torch.float32, device=self.device)
@@ -129,13 +124,16 @@ class PpoAgent(Agent):
         if len(advantages) > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # 2. PPO Update Loop
+        # PPO Update Loop
         for _ in range(ppo_epochs):
+            # Create batch state using namedtuple
+            batch_state = BatchedState(probabilities=probs, tables=tables)
+            
             # Forward pass
-            outputs = self.network(hands, probs, tables, trumps)
+            outputs = self.network(batch_state)
             
             # Get new log probs and entropy
-            card_logits = outputs['card_policy'] # [B, 32]
+            card_logits = outputs['card_policy']  # [B, 32]
             
             # Apply mask
             masked_logits = card_logits + masks
@@ -144,7 +142,7 @@ class PpoAgent(Agent):
             new_log_probs = dist.log_prob(actions)
             entropy = dist.entropy().mean()
             
-            new_values = outputs['value'].squeeze(-1) # [B]
+            new_values = outputs['value'].squeeze(-1)  # [B]
             
             # Ratio
             ratio = torch.exp(new_log_probs - old_log_probs)
@@ -168,44 +166,27 @@ class PpoAgent(Agent):
 
     # --- Helper Methods ---
 
-    def _prepare_hand(self, cards):
-        hand_vec = torch.zeros(32, dtype=torch.float32, device=self.device)
-        for card in cards:
-            idx = card.suit * 8 + card.rank
-            hand_vec[idx] = 1.0
-        return hand_vec
-
-    def _prepare_probability(self, probability):
-        # Flatten the [4, 4, 8] matrix to [128]
-        prob_np = probability.matrix.flatten()
-        return torch.tensor(prob_np, dtype=torch.float32, device=self.device)
-
-    def _prepare_table(self, table_cards):
-        # Convert table cards to indices [4]
-        # 0-31 for cards, 36 for empty/padding
-        table_indices = []
-        for card in table_cards:
-            idx = card.suit * 8 + card.rank
-            table_indices.append(idx)
+    def _batch_state(self, state: State) -> State:
+        """
+        Add batch dimension to state tensors.
+        Converts Probability matrix to flattened tensor and tables list to tensor.
+        """
+        # Convert Probability matrix (4, 4, 8) to tensor and flatten to (128,)
+        prob_matrix = state.probability.matrix
+        prob_tensor = torch.tensor(prob_matrix.flatten(), dtype=torch.float32, device=self.device)
+        prob_batch = prob_tensor.unsqueeze(0)  # [1, 128]
         
-        # Pad to 4
-        while len(table_indices) < 4:
-            table_indices.append(36)
-            
-        return torch.tensor(table_indices, dtype=torch.long, device=self.device)
-
-    def _prepare_trump(self, trump):
-        # Encode trump [5]
-        # [Mode, S0, S1, S2, S3]
-        # Mode: 0 for Regular, 1 for AllTrump/NoTrump (simplified)
-        # Actually network expects: is_regular_mode = (trumps[:, 0] < 0.5)
+        # Convert table list to tensor, pad if necessary
+        table_list = list(state.table) if state.table else []  # Make a copy!
+        # Pad with 36 (unknown card) to make it length 4
+        while len(table_list) < 4:
+            table_list.append(36)  # padding index
+        table_tensor = torch.tensor([card.to_index() if hasattr(card, 'to_index') else 36 for card in table_list], dtype=torch.long, device=self.device)
+        table_batch = table_tensor.unsqueeze(0)  # [1, 4]
         
-        trump_vec = [0.0] * 5
-        if trump.mode == TrumpMode.Regular:
-            trump_vec[0] = 0.0 # Regular mode
-            if trump.suit is not None:
-                trump_vec[1 + trump.suit] = 1.0
-        else:
-            trump_vec[0] = 1.0 # Non-regular mode (AllTrump/NoTrump)
-            
-        return torch.tensor(trump_vec, dtype=torch.float32, device=self.device)
+        # Create a mock State with tensor attributes for network
+        state_with_tensors = State(cards=[], trump=state.trump)
+        state_with_tensors.probabilities = prob_batch
+        state_with_tensors.tables = table_batch
+        
+        return state_with_tensors

@@ -9,14 +9,27 @@ from src.phases.play.ppo.gym import Gym
 
 def main():
     parser = argparse.ArgumentParser(description="Train Belote PPO Agent")
-    parser.add_argument("--episodes", type=int, default=1000, help="Number of episodes to train")
-    parser.add_argument("--batch_size", type=int, default=256, help="Batch size for PPO update")
-    parser.add_argument("--model_path", type=str, default="models/belote_agent.pt", help="Path to save/load model")
+    parser.add_argument("--phases", type=int, default=5, help="Number of training phases")
+    parser.add_argument("--games_per_phase", type=int, default=100, help="Number of games per phase")
+    parser.add_argument("--model_dir", type=str, default="models", help="Directory to save/load models")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--opponents", type=str, default="random,aggressive,soft", 
+                        help="Comma-separated opponent types: random, aggressive, soft")
     
     args = parser.parse_args()
     
-    gym = Gym(model_path=args.model_path)
-    gym.train(episodes=args.episodes, batch_size=args.batch_size, save_path=args.model_path)
+    # Parse opponent types
+    opponent_types = [opp.strip() for opp in args.opponents.split(",")]
+    if len(opponent_types) != 3:
+        print("Error: Must specify exactly 3 opponent types")
+        sys.exit(1)
+    
+    gym = Gym(model_dir=args.model_dir, seed=args.seed)
+    gym.train_phases(
+        num_phases=args.phases,
+        games_per_phase=args.games_per_phase,
+        opponent_types=opponent_types
+    )
 
 if __name__ == "__main__":
     main()

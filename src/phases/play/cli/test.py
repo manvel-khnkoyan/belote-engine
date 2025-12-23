@@ -1,5 +1,6 @@
 import os
 import torch
+import argparse
 
 from src.phases.play.core.result import Result
 from src.phases.play.core.rules import Rules
@@ -8,8 +9,13 @@ from src.phases.play.core.simulator import Simulator
 from src.phases.play.helper_agents.ppo_tester import PpoTester
 
 def main():
+    parser = argparse.ArgumentParser(description="Test Belote PPO Agent against recorded game")
+    parser.add_argument("--model", type=str, default="models/model.pt", help="Path to the trained model file")
+    parser.add_argument("--record", type=str, default="records/record-001.pkl", help="Path to the record file")
+    args = parser.parse_args()
+
     # Load the recorded game
-    load_path = "records/record-001.pkl"
+    load_path = args.record
     if not os.path.exists(load_path):
         print(f"Error: {load_path} not found. Please run record.py first.")
         return
@@ -24,13 +30,14 @@ def main():
     # Initialize PPO Agent
     print("Loading PPO Agent...")
     network = PPONetwork()
-    model_path = "models/belote_agent.pt"
+    model_path = args.model
     
     if not os.path.exists(model_path):
-        print(f"Error: {model_path} not found.")
+        print(f"Error: {model_path} not found. Please run training first.")
         return
 
     network.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    print(f"Loaded model from {model_path}")
     
     # Initialize PpoTester
     # We use separate instances for each player, but they share the cursor via the class
