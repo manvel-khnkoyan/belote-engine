@@ -8,12 +8,20 @@ from typing import List
 State is personal from first person view.
 """
 class State:
-    def __init__(self, cards: List[Card], trump: Trump, probability=Probability()):
+    def __init__(self, cards: List[Card], trump: Trump, probability=None):
         self.cards = list(cards)
         self.trump = trump
         self.round = 0
         self.table = []
-        self.probability: Probability = probability
+        
+        if probability is None:
+            self.probability = Probability()
+        else:
+            self.probability = probability
+
+        # Initialize probabilities for own cards
+        for card in self.cards:
+            self.probability.update(0, card.suit, card.rank, 1.0)
 
     def observe(self, player: int, action: Action):
         if isinstance(action, ActionPlayCard):

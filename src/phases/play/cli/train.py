@@ -9,10 +9,10 @@ from src.phases.play.ppo.gym import Gym
 
 def main():
     parser = argparse.ArgumentParser(description="Train Belote PPO Agent")
-    parser.add_argument("--phases", type=int, default=5, help="Number of training phases")
-    parser.add_argument("--games_per_phase", type=int, default=100, help="Number of games per phase")
-    parser.add_argument("--model_dir", type=str, default="models", help="Directory to save/load models")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--phases", type=int, default=5, help="Number of training phases, default is 5")
+    parser.add_argument("--games-per-phase", type=int, default=100, help="Number of games per phase, default is 100")
+    parser.add_argument("--model-dir", type=str, default="models", help="Directory to save/load models, default is 'models'")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility, default is 42")
     parser.add_argument("--opponents", type=str, default="random,aggressive,soft", 
                         help="Comma-separated opponent types: random, aggressive, soft")
     

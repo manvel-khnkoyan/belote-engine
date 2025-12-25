@@ -19,7 +19,6 @@ from src.phases.play.ppo.network import PPONetwork
 
 def main():
     parser = argparse.ArgumentParser(description="Record Belote Game")
-    parser.add_argument("--model", type=str, help="Path to the trained model file (optional). If provided, plays against AI.")
     parser.add_argument("--output", type=str, default="records/record-001.pkl", help="Path to save the record file")
     args = parser.parse_args()
 
@@ -29,24 +28,8 @@ def main():
     # Hands
     hands = [Cards.sort(hand, trump) for hand in Deck.create()]
     
-    # Initialize agents
-    if args.model:
-        if not os.path.exists(args.model):
-            print(f"Error: {args.model} not found.")
-            return
-        
-        print(f"Loading model from {args.model}...")
-        try:
-            network = PPONetwork()
-            network.load_state_dict(torch.load(args.model, map_location=torch.device('cpu')))
-            # Player 0 is Human, others are PPO
-            agents = [HumanAgent()] + [PpoAgent(network) for _ in range(3)]
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return
-    else:
-        # All Human
-        agents = [HumanAgent() for _ in range(4)]
+    # All Human
+    agents = [HumanAgent() for _ in range(4)]
 
     # Initialize Simulator
     rules = Rules()
