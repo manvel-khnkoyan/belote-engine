@@ -9,12 +9,20 @@ class Probability:
 
     def update(self, player, suit, rank, val):
         """Updates probability for a card, redistributing remaining probability to others."""
-        if self.matrix[0, suit, rank] == -1.0: return False # Card played
+        # Check if card is already played (all 0.0 is ambiguous, but we can check if sum is 0)
+        # If sum is 0, it means nobody has it (played or impossible)
+        if np.sum(self.matrix[:, suit, rank]) < 1e-6: return False
         
-        # If setting to 1.0 or -1.0 (certainty), clear others
-        if abs(abs(val) - 1.0) < 1e-6:
+        # If setting to -1.0 (played), set EVERYONE to 0.0
+        # This means the card is removed from the game
+        if abs(val + 1.0) < 1e-6:
             self.matrix[:, suit, rank] = 0.0
-            self.matrix[player, suit, rank] = float(round(val))
+            return True
+
+        # If setting to 1.0 (certainty), clear others
+        if abs(val - 1.0) < 1e-6:
+            self.matrix[:, suit, rank] = 0.0
+            self.matrix[player, suit, rank] = 1.0
             return True
 
         current = self.matrix[player, suit, rank]

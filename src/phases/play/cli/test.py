@@ -53,9 +53,8 @@ def main():
     print(f"Starting {args.times} comparison simulation(s)...")
     
     # Run simulations N times
-    for game_num in range(args.times):
-        print(f"Game {game_num + 1}/{args.times}")
-        
+    for _ in range(args.times):
+
         # Reset cursor for each game
         PpoTester.cursor = 0
         

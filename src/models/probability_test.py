@@ -25,12 +25,13 @@ class TestProbability:
         # Player 0 played Suit 0, Rank 0
         prob.update(0, 0, 0, -1.0)
         
-        assert prob.matrix[0, 0, 0] == -1.0
+        # Now we expect 0.0 for everyone, meaning the card is out of play
+        assert prob.matrix[0, 0, 0] == 0.0
         assert prob.matrix[1, 0, 0] == 0.0
         assert prob.matrix[2, 0, 0] == 0.0
         assert prob.matrix[3, 0, 0] == 0.0
         
-        # Try to update again
+        # Try to update again (should return False because sum is 0)
         assert prob.update(0, 0, 0, 0.5) == False
 
     def test_update_probability_redistribution(self):

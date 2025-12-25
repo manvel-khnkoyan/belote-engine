@@ -161,9 +161,9 @@ class Gym:
             game_reward = sum(r.instant_reward for r in agent_records) + (agent_records[-1].accrued_reward if agent_records else 0)
             total_rewards.append(game_reward)
             
-            if game % 10 == 0:
-                avg_10 = np.mean(total_rewards[-10:])
-                print(f"  Game {game}/{num_games} | Avg Reward (last 10): {avg_10:.2f}")
+            #if game % 10 == 0:
+            #    avg_10 = np.mean(total_rewards[-10:])
+            #    print(f"  Game {game}/{num_games} | Avg Reward (last 10): {avg_10:.2f}")
         
         avg_reward = np.mean(total_rewards) if total_rewards else 0.0
         return all_records, avg_reward
@@ -198,12 +198,16 @@ class Gym:
         if not records:
             return
         
-        values = [r.log['value'] for r in records]
-        rewards = [r.instant_reward for r in records]
+        # Extract values (ensure they are floats)
+        values = [float(r.log['value']) for r in records]
+        
+        # Normalize rewards! (Crucial for stability)
+        # Belote max score is ~162. Dividing by 100 keeps it in reasonable range.
+        rewards = [r.instant_reward / 100.0 for r in records]
         
         # Add final accrued reward to the last reward
         if records:
-            rewards[-1] += records[-1].accrued_reward
+            rewards[-1] += (records[-1].accrued_reward / 100.0)
         
         # Append 0 for value of terminal state
         values.append(0.0)

@@ -168,8 +168,9 @@ class PPONetwork(nn.Module):
         # Determine play case based on number of table cards
         stage_counts = torch.clamp(counts, 0, 3)  # [B]
 
-        # Initialize card logits
+        # Initialize card logits and values
         card_logits = torch.zeros(B, self.num_cards, device=device)
+        values = torch.zeros(B, 1, device=device)
 
         # ============ CASE 1: LEAD (0 table cards) ============
         case1_mask = (stage_counts == 0)
@@ -177,6 +178,7 @@ class PPONetwork(nn.Module):
             hand_case1 = hand_encoded[case1_mask]  # [b, hidden_dim]
             fused_case1 = self.case1_fusion(hand_case1)
             card_logits[case1_mask] = self.card_head(fused_case1)
+            values[case1_mask] = self.value_head(fused_case1)
 
         # ============ CASE 2: FOLLOW (1 table card) ============
         case2_mask = (stage_counts == 1)
@@ -186,6 +188,7 @@ class PPONetwork(nn.Module):
             fused_input_case2 = torch.cat([hand_case2, table_case2], dim=-1)  # [b, 2*hidden_dim]
             fused_case2 = self.case2_fusion(fused_input_case2)
             card_logits[case2_mask] = self.card_head(fused_case2)
+            values[case2_mask] = self.value_head(fused_case2)
 
         # ============ CASE 3: FOLLOW (2 table cards) ============
         case3_mask = (stage_counts == 2)
@@ -195,6 +198,7 @@ class PPONetwork(nn.Module):
             fused_input_case3 = torch.cat([hand_case3, table_case3], dim=-1)  # [b, 2*hidden_dim]
             fused_case3 = self.case3_fusion(fused_input_case3)
             card_logits[case3_mask] = self.card_head(fused_case3)
+            values[case3_mask] = self.value_head(fused_case3)
 
         # ============ CASE 4: CLEANUP (3 table cards) ============
         case4_mask = (stage_counts == 3)
@@ -204,11 +208,12 @@ class PPONetwork(nn.Module):
             fused_input_case4 = torch.cat([hand_case4, table_case4], dim=-1)  # [b, 2*hidden_dim]
             fused_case4 = self.case4_fusion(fused_input_case4)
             card_logits[case4_mask] = self.card_head(fused_case4)
+            values[case4_mask] = self.value_head(fused_case4)
 
         # ============ OTHER POLICY HEADS (use hand encoding) ============
         return {
             "card_policy": card_logits,  # [B, 32]
             "bid_policy": self.bid_head(hand_encoded),  # [B, 9]
             "announce_policy": self.announce_head(hand_encoded),  # [B, 10]
-            "value": self.value_head(hand_encoded),  # [B, 1]
+            "value": values,  # [B, 1] - Now uses fused state (Hand + Table)
         }

@@ -2,17 +2,19 @@ from .actions import Action, ActionPlayCard, ActionPass
 from src.models.card import Card
 from src.models.trump import Trump
 from src.models.probability import Probability
+from src.models.history import History
 from typing import List
 
 """
 State is personal from first person view.
 """
 class State:
-    def __init__(self, cards: List[Card], trump: Trump, probability=None):
+    def __init__(self, cards: List[Card], trump: Trump, history: History = History(), probability:Probability =None):
         self.cards = list(cards)
         self.trump = trump
         self.round = 0
         self.table = []
+        self.history = history
         
         if probability is None:
             self.probability = Probability()
@@ -33,6 +35,7 @@ class State:
                 self.round += 1
                 self.table = []
 
+            self.history.played(player, action.card.suit, action.card.rank)
             self.probability.update(player, action.card.suit, action.card.rank, -1.0)
 
     def __repr__(self):
