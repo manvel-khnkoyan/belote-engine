@@ -9,17 +9,14 @@ from typing import List
 State is personal from first person view.
 """
 class State:
-    def __init__(self, cards: List[Card], trump: Trump, history: History = History(), probability:Probability =None):
+    def __init__(self, cards: List[Card], trump: Trump, history: History = None, probability: Probability = None):
         self.cards = list(cards)
         self.trump = trump
         self.round = 0
-        self.table = []
-        self.history = history
-        
-        if probability is None:
-            self.probability = Probability()
-        else:
-            self.probability = probability
+        self.table = []  
+
+        self.probability = Probability() if probability is None else probability
+        self.history = History() if history is None else history
 
         # Initialize probabilities for own cards
         for card in self.cards:

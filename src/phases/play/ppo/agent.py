@@ -11,7 +11,7 @@ from src.phases.play.core.record import Record
 from src.phases.play.ppo.network import PPONetwork
 
 # Simple container for batched state tensors
-BatchedState = namedtuple('BatchedState', ['probabilities', 'tables'])
+BatchedState = namedtuple('BatchedState', ['probabilities', 'tables', 'history'])
 
 
 class PpoAgent(Agent):
@@ -74,6 +74,7 @@ class PpoAgent(Agent):
             'state': {
                 'probabilities': state_batch.probabilities.cpu().numpy() if isinstance(state_batch.probabilities, torch.Tensor) else state_batch.probabilities,
                 'tables': state_batch.tables.cpu().numpy() if isinstance(state_batch.tables, torch.Tensor) else state_batch.tables,
+                'history': state_batch.history.cpu().numpy() if isinstance(state_batch.history, torch.Tensor) else state_batch.history,
             },
             'action_idx': action_idx,
             'mask': mask.cpu().numpy()
@@ -107,6 +108,11 @@ class PpoAgent(Agent):
             dtype=torch.long, 
             device=self.device
         ).squeeze(1)
+        histories = torch.tensor(
+            np.array([r.log['state']['history'] for r in records]), 
+            dtype=torch.float32, 
+            device=self.device
+        ).squeeze(1)
         
         # Actions & Old Log Probs
         actions = torch.tensor([r.log['action_idx'] for r in records], dtype=torch.long, device=self.device)
@@ -127,7 +133,7 @@ class PpoAgent(Agent):
         # PPO Update Loop
         for _ in range(ppo_epochs):
             # Create batch state using namedtuple
-            batch_state = BatchedState(probabilities=probs, tables=tables)
+            batch_state = BatchedState(probabilities=probs, tables=tables, history=histories)
             
             # Forward pass
             outputs = self.network(batch_state)
@@ -176,6 +182,11 @@ class PpoAgent(Agent):
         prob_tensor = torch.tensor(prob_matrix.flatten(), dtype=torch.float32, device=self.device)
         prob_batch = prob_tensor.unsqueeze(0)  # [1, 128]
         
+        # Convert History matrix (4, 4, 8) to tensor and flatten to (128,)
+        hist_matrix = state.history.matrix
+        hist_tensor = torch.tensor(hist_matrix.flatten(), dtype=torch.float32, device=self.device)
+        hist_batch = hist_tensor.unsqueeze(0)  # [1, 128]
+        
         # Convert table list to tensor, pad if necessary
         table_list = list(state.table) if state.table else []  # Make a copy!
         # Pad with 36 (unknown card) to make it length 4
@@ -188,5 +199,6 @@ class PpoAgent(Agent):
         state_with_tensors = State(cards=[], trump=state.trump)
         state_with_tensors.probabilities = prob_batch
         state_with_tensors.tables = table_batch
+        state_with_tensors.history = hist_batch
         
         return state_with_tensors

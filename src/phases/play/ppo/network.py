@@ -33,8 +33,9 @@ class PPONetwork(nn.Module):
         self.card_embedding = nn.Embedding(37, card_emb_dim, padding_idx=36)
 
         # ============ ACTION TYPE CLASSIFIER ============
+        # Input is now Probabilities (128) + History (128) = 256
         self.action_classifier = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
+            nn.Linear(state_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, 2),  # 0: play, 1: declare (future)
@@ -42,7 +43,7 @@ class PPONetwork(nn.Module):
 
         # ============ PROBABILITY ENCODER (Hand representation) ============
         self.prob_encoder = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
+            nn.Linear(state_dim * 2, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
@@ -145,22 +146,26 @@ class PPONetwork(nn.Module):
         Forward pass with separate case-specific networks.
         
         Args:
-            state: State object with probabilities [B, 128] and tables [B, 4]
+            state: State object with probabilities [B, 128], history [B, 128] and tables [B, 4]
         
         Returns:
             dict with card_policy, bid_policy, announce_policy, value
         """
         probabilities = state.probabilities  # [B, 128]
-        tables = state.tables  # [B, 4]
+        history = state.history              # [B, 128]
+        tables = state.tables                # [B, 4]
 
         B = probabilities.size(0)
         device = probabilities.device
 
-        # ============ ACTION TYPE CLASSIFICATION ============
-        self.action_classifier(probabilities.float())  # [B, 2]
+        # Combine probabilities and history
+        combined_state = torch.cat([probabilities, history], dim=1) # [B, 256]
 
-        # ============ ENCODE HAND (from probabilities) ============
-        hand_encoded = self.prob_encoder(probabilities.float())  # [B, hidden_dim]
+        # ============ ACTION TYPE CLASSIFICATION ============
+        self.action_classifier(combined_state.float())  # [B, 2]
+
+        # ============ ENCODE HAND (from probabilities + history) ============
+        hand_encoded = self.prob_encoder(combined_state.float())  # [B, hidden_dim]
 
         # ============ EMBED TABLE ============
         table_flat, counts = self._embed_table(tables)  # table_flat: [B, 4*card_emb_dim]
