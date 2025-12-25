@@ -143,7 +143,13 @@ class Gym:
             ]
             
             # Create opponents
-            opponents = [self._create_opponent(opp_type) for opp_type in opponent_types]
+            # If more than 3 opponent types are provided, randomly sample 3
+            if len(opponent_types) > 3:
+                selected_opponents = self.rng.choice(opponent_types, size=3, replace=True)
+            else:
+                selected_opponents = opponent_types
+                
+            opponents = [self._create_opponent(opp_type) for opp_type in selected_opponents]
             
             # Assign agents (PPO is player 0)
             agents = [self.agent] + opponents
@@ -178,7 +184,7 @@ class Gym:
         Create an opponent agent of the specified type.
         
         Args:
-            opponent_type: 'random', 'aggressive', or 'soft'
+            opponent_type: 'random', 'aggressive', 'soft', or 'ppo'
             
         Returns:
             Agent instance
@@ -191,6 +197,19 @@ class Gym:
             return AggressivePlayerAgent()
         elif opponent_type == 'soft':
             return SoftPlayerAgent()
+        elif opponent_type == 'ppo':
+            # Create a new network instance for the opponent
+            opponent_network = PPONetwork().to(self.device)
+            
+            # Load the latest model
+            model_path = os.path.join(self.model_dir, "model.pt")
+            if os.path.exists(model_path):
+                opponent_network.load_state_dict(torch.load(model_path, map_location=self.device))
+                opponent_network.eval()
+            else:
+                print(f"Warning: PPO model not found at {model_path}, using random weights")
+                
+            return PpoAgent(opponent_network)
         else:
             print(f"Unknown opponent type '{opponent_type}', defaulting to random")
             return RandomChooserAgent()

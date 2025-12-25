@@ -13,15 +13,15 @@ def main():
     parser.add_argument("--games-per-phase", type=int, default=100, help="Number of games per phase, default is 100")
     parser.add_argument("--model-dir", type=str, default="models", help="Directory to save/load models, default is 'models'")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility, default is 42")
-    parser.add_argument("--opponents", type=str, default="random,aggressive,soft", 
-                        help="Comma-separated opponent types: random, aggressive, soft")
+    parser.add_argument("--opponents", type=str, default="random,aggressive,soft,ppo,ppo,ppo", 
+                        help="Comma-separated opponent types: random, aggressive, soft, ppo")
     
     args = parser.parse_args()
     
     # Parse opponent types
     opponent_types = [opp.strip() for opp in args.opponents.split(",")]
-    if len(opponent_types) != 3:
-        print("Error: Must specify exactly 3 opponent types")
+    if len(opponent_types) < 3:
+        print("Error: Must specify at least 3 opponent types")
         sys.exit(1)
     
     gym = Gym(model_dir=args.model_dir, seed=args.seed)
