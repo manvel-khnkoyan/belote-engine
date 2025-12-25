@@ -80,8 +80,13 @@ class Gym:
             # Train on collected experience
             if records:
                 print(f"\nTraining on {len(records)} experiences...")
-                self.agent.learn(records)
+                metrics = self.agent.learn(records)
                 print("✓ Training complete")
+                if metrics:
+                    print(f"  Loss: {metrics['total_loss']:.4f} "
+                          f"(Policy: {metrics['policy_loss']:.4f}, "
+                          f"Value: {metrics['value_loss']:.4f}, "
+                          f"Entropy: {metrics['entropy']:.4f})")
             
             # Save model for next phase
             model_path = os.path.join(self.model_dir, "model.pt")

@@ -15,6 +15,7 @@ class State:
         self.round = 0
         self.table = []  
 
+        # Initialize probability and history
         self.probability = Probability() if probability is None else probability
         self.history = History() if history is None else history
 

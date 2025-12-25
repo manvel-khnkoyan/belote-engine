@@ -18,7 +18,7 @@ class PpoAgent(Agent):
     def __init__(self, network: PPONetwork):
         self.network = network
         self.device = next(network.parameters()).device
-        self.optimizer = torch.optim.Adam(network.parameters(), lr=1e-4, weight_decay=1e-5)
+        self.optimizer = torch.optim.Adam(network.parameters(), lr=1e-3, weight_decay=1e-5)
 
     def choose_action(self, state: State, actions: List[Action]) -> Tuple[Action, Dict[str, Any] | None]:
         """
@@ -88,7 +88,7 @@ class PpoAgent(Agent):
         Assumes record.log contains 'advantage' and 'return' keys.
         """
         if not records:
-            return
+            return {}
 
         # Hyperparameters
         clip_param = 0.2
@@ -96,6 +96,7 @@ class PpoAgent(Agent):
         entropy_coef = 0.01
         max_grad_norm = 0.5
         ppo_epochs = 4
+        batch_size = 64  # Mini-batch size
         
         # Collate data into tensors
         probs = torch.tensor(
@@ -121,7 +122,7 @@ class PpoAgent(Agent):
         
         # Targets
         if 'advantage' not in records[0].log or 'return' not in records[0].log:
-            return
+            return {}
 
         advantages = torch.tensor([r.log['advantage'] for r in records], dtype=torch.float32, device=self.device)
         returns = torch.tensor([r.log['return'] for r in records], dtype=torch.float32, device=self.device)
@@ -130,45 +131,85 @@ class PpoAgent(Agent):
         if len(advantages) > 1:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
+        # Track metrics
+        total_policy_loss = 0
+        total_value_loss = 0
+        total_entropy = 0
+        total_loss = 0
+        num_updates = 0
+
+        dataset_size = len(records)
+        indices = np.arange(dataset_size)
+
         # PPO Update Loop
         for _ in range(ppo_epochs):
-            # Create batch state using namedtuple
-            batch_state = BatchedState(probabilities=probs, tables=tables, history=histories)
+            np.random.shuffle(indices)
             
-            # Forward pass
-            outputs = self.network(batch_state)
-            
-            # Get new log probs and entropy
-            card_logits = outputs['card_policy']  # [B, 32]
-            
-            # Apply mask
-            masked_logits = card_logits + masks
-            dist = torch.distributions.Categorical(logits=masked_logits)
-            
-            new_log_probs = dist.log_prob(actions)
-            entropy = dist.entropy().mean()
-            
-            new_values = outputs['value'].squeeze(-1)  # [B]
-            
-            # Ratio
-            ratio = torch.exp(new_log_probs - old_log_probs)
-            
-            # Surrogate Loss
-            surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1.0 - clip_param, 1.0 + clip_param) * advantages
-            policy_loss = -torch.min(surr1, surr2).mean()
-            
-            # Value Loss
-            value_loss = nn.functional.mse_loss(new_values, returns)
-            
-            # Total Loss
-            loss = policy_loss + value_loss_coef * value_loss - entropy_coef * entropy
-            
-            # Optimization step
-            self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.network.parameters(), max_grad_norm)
-            self.optimizer.step()
+            for start in range(0, dataset_size, batch_size):
+                end = start + batch_size
+                batch_indices = indices[start:end]
+                
+                # Create mini-batch
+                mb_probs = probs[batch_indices]
+                mb_tables = tables[batch_indices]
+                mb_histories = histories[batch_indices]
+                mb_actions = actions[batch_indices]
+                mb_old_log_probs = old_log_probs[batch_indices]
+                mb_masks = masks[batch_indices]
+                mb_advantages = advantages[batch_indices]
+                mb_returns = returns[batch_indices]
+
+                # Create batch state using namedtuple
+                batch_state = BatchedState(probabilities=mb_probs, tables=mb_tables, history=mb_histories)
+                
+                # Forward pass
+                outputs = self.network(batch_state)
+                
+                # Get new log probs and entropy
+                card_logits = outputs['card_policy']  # [B, 32]
+                
+                # Apply mask
+                masked_logits = card_logits + mb_masks
+                dist = torch.distributions.Categorical(logits=masked_logits)
+                
+                new_log_probs = dist.log_prob(mb_actions)
+                entropy = dist.entropy().mean()
+                
+                new_values = outputs['value'].squeeze(-1)  # [B]
+                
+                # Ratio
+                ratio = torch.exp(new_log_probs - mb_old_log_probs)
+                
+                # Surrogate Loss
+                surr1 = ratio * mb_advantages
+                surr2 = torch.clamp(ratio, 1.0 - clip_param, 1.0 + clip_param) * mb_advantages
+                policy_loss = -torch.min(surr1, surr2).mean()
+                
+                # Value Loss
+                value_loss = nn.functional.mse_loss(new_values, mb_returns)
+                
+                # Total Loss
+                loss = policy_loss + value_loss_coef * value_loss - entropy_coef * entropy
+                
+                # Optimization step
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.network.parameters(), max_grad_norm)
+                self.optimizer.step()
+
+                # Accumulate metrics
+                total_policy_loss += policy_loss.item()
+                total_value_loss += value_loss.item()
+                total_entropy += entropy.item()
+                total_loss += loss.item()
+                num_updates += 1
+
+        return {
+            'policy_loss': total_policy_loss / num_updates,
+            'value_loss': total_value_loss / num_updates,
+            'entropy': total_entropy / num_updates,
+            'total_loss': total_loss / num_updates
+        }
 
     # --- Helper Methods ---
 
