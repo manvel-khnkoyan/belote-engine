@@ -29,8 +29,16 @@ class Gym:
         self.network = PPONetwork().to(self.device)
         self.agent = PpoAgent(self.network)
         
+        # Opponent Cache
+        self.opponent_cache = {}
+        
         # Rules
         self.rules = Rules()
+
+        # Predefined agent
+        self.random_chooser = RandomChooserAgent()
+        self.aggressive_player = AggressivePlayerAgent()
+        self.soft_player = SoftPlayerAgent()
         
         print(f"Gym initialized on device: {self.device}")
 
@@ -92,7 +100,12 @@ class Gym:
             # Save model for next phase
             model_path = os.path.join(self.model_dir, "model.pt")
             self.save_model(model_path)
-            print(f"✓ Model saved to {model_path}")
+            
+            # Also save a checkpoint for this phase
+            checkpoint_path = os.path.join(self.model_dir, f"model_phase_{phase}.pt")
+            self.save_model(checkpoint_path)
+            
+            print(f"✓ Model saved to {model_path} and {checkpoint_path}")
             
             phase_rewards.append(phase_reward)
             print(f"Phase Reward: {phase_reward:.2f}")
@@ -196,24 +209,35 @@ class Gym:
         opponent_type = opponent_type.lower()
         
         if opponent_type == 'random':
-            return RandomChooserAgent()
-        elif opponent_type == 'aggressive':
-            return AggressivePlayerAgent()
-        elif opponent_type == 'soft':
-            return SoftPlayerAgent()
-        elif opponent_type == 'ppo':
-            # Create a new network instance for the opponent
-            opponent_network = PPONetwork().to(self.device)
-            
-            # Load the latest model
+            return self.random_chooser
+        
+        if opponent_type == 'aggressive':
+            return self.aggressive_player
+        
+        if opponent_type == 'soft':
+            return self.soft_player
+        
+        if opponent_type == 'ppo':
+            # Check cache first
             model_path = os.path.join(self.model_dir, "model.pt")
-            if os.path.exists(model_path):
-                opponent_network.load_state_dict(torch.load(model_path, map_location=self.device))
-                opponent_network.eval()
-            elif phase > 1:
-                print(f"Warning: PPO model not found at {model_path}, using random weights")
-                
-            return PpoAgent(opponent_network)
+            
+            # Only reload if the file on disk has changed or isn't cached
+            # For simplicity, let's just load once per phase or check if key exists
+            if 'ppo' not in self.opponent_cache:
+                opponent_network = PPONetwork().to(self.device)
+                if os.path.exists(model_path):
+                    opponent_network.load_state_dict(torch.load(model_path, map_location=self.device))
+                    opponent_network.eval() # Opponents should always be in eval mode
+                    self.opponent_cache['ppo'] = opponent_network
+                elif phase > 1:
+                    print(f"Warning: PPO model not found, using random weights")
+                    self.opponent_cache['ppo'] = opponent_network
+                else:
+                     # Phase 1: just random weights
+                     self.opponent_cache['ppo'] = opponent_network
+
+            # Create a NEW agent but share the network (read-only)
+            return PpoAgent(self.opponent_cache['ppo'])
         else:
             print(f"Unknown opponent type '{opponent_type}', defaulting to random")
             return RandomChooserAgent()

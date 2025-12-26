@@ -2,7 +2,7 @@ import numpy as np
 
 class Probability:
     """Tracks card probabilities: (4, 4, 8) matrix (player, suit, rank).
-    Values: 1.0 (has), 0.0 (not), -1.0 (played), 0-1 (prob)."""
+    Values: 1.0 (has), 0.0 (not), 0-1 (prob)."""
 
     def __init__(self, matrix=None):
         self.matrix = matrix if matrix is not None else np.full((4, 4, 8), 0.25, dtype=np.float32)
@@ -46,7 +46,8 @@ class Probability:
     
     def extract(self, player, suit, rank, pct):
         """Extracts probability from other players and adds to target player."""
-        if self.matrix[0, suit, rank] == -1.0: return False
+        # Check if card is played (sum is 0)
+        if np.sum(self.matrix[:, suit, rank]) < 1e-6: return False
         
         others_mask = np.arange(4) != player
         others_sum = np.sum(self.matrix[others_mask, suit, rank])

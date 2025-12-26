@@ -22,7 +22,7 @@ class PPONetwork(nn.Module):
         └─ Fusion(Hand, Table_Emb[3], Probabilities) → Card Policy
     """
 
-    def __init__(self, state_dim=128, hidden_dim=128, card_emb_dim=16, dropout=0.1):
+    def __init__(self, state_dim=256, hidden_dim=128, card_emb_dim=16, dropout=0.1):
         super().__init__()
 
         self.num_cards = 32
@@ -33,7 +33,7 @@ class PPONetwork(nn.Module):
         self.card_embedding = nn.Embedding(37, card_emb_dim, padding_idx=36)
 
         # ============ ACTION TYPE CLASSIFIER ============
-        # Input is Probabilities [B, 128]
+        # Input is Probabilities [B, 128] + History [B, 128] = 256
         self.action_classifier = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
             nn.ReLU(),
@@ -171,16 +171,20 @@ class PPONetwork(nn.Module):
             dict with card_policy, bid_policy, announce_policy, value
         """
         probabilities = state.probabilities  # [B, 128]
+        history = state.history              # [B, 128]
         tables = state.tables                # [B, 4]
 
         B = probabilities.size(0)
         device = probabilities.device
 
+        # Combine inputs
+        combined_state = torch.cat([probabilities, history], dim=-1) # [B, 256]
+
         # ============ ACTION TYPE CLASSIFICATION ============
-        action_type_logits = self.action_classifier(probabilities.float())  # [B, 2]
+        action_type_logits = self.action_classifier(combined_state.float())  # [B, 2]
 
         # ============ ENCODE HAND (from probabilities) ============
-        hand_encoded = self.prob_encoder(probabilities.float())  # [B, hidden_dim]
+        hand_encoded = self.prob_encoder(combined_state.float())  # [B, hidden_dim]
 
         # ============ EMBED TABLE ============
         card_emb, counts = self._embed_table(tables)  # card_emb: [B, 4, card_emb_dim]
