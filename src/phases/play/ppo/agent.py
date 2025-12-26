@@ -11,7 +11,7 @@ from src.phases.play.core.record import Record
 from src.phases.play.ppo.network import PPONetwork
 
 # Simple container for batched state tensors
-BatchedState = namedtuple('BatchedState', ['probabilities', 'tables', 'history'])
+BatchedState = namedtuple('BatchedState', ['probabilities', 'tables', 'history', 'legal_actions'])
 
 
 class PpoAgent(Agent):
@@ -24,16 +24,6 @@ class PpoAgent(Agent):
         """
         Choose an action based on the current game state.
         """
-        # Prepare state for network
-        state_batch = self._batch_state(state)
-
-        # Forward Pass
-        with torch.no_grad():
-            outputs = self.network(state_batch)
-        
-        # Get card policy logits
-        card_logits = outputs['card_policy'][0]  # [32]
-        
         # Filter for PlayCard actions
         play_card_actions = [a for a in actions if isinstance(a, ActionPlayCard)]
         
@@ -50,11 +40,22 @@ class PpoAgent(Agent):
             valid_indices.append(idx)
             action_map[idx] = action
             
-        mask = torch.full_like(card_logits, -float('inf'))
+        mask = torch.full((32,), -float('inf'), device=self.device)
         for idx in valid_indices:
             mask[idx] = 0
+
+        # Prepare state for network
+        state_batch = self._batch_state(state)
+        state_batch.legal_actions = mask.unsqueeze(0)
+
+        # Forward Pass
+        with torch.no_grad():
+            outputs = self.network(state_batch)
+        
+        # Get card policy logits
+        card_logits = outputs['card_policy'][0]  # [32]
             
-        masked_logits = card_logits + mask
+        masked_logits = card_logits # Already masked in network
         probs = torch.softmax(masked_logits, dim=0)
         
         # Sample action
@@ -160,7 +161,7 @@ class PpoAgent(Agent):
                 mb_returns = returns[batch_indices]
 
                 # Create batch state using namedtuple
-                batch_state = BatchedState(probabilities=mb_probs, tables=mb_tables, history=mb_histories)
+                batch_state = BatchedState(probabilities=mb_probs, tables=mb_tables, history=mb_histories, legal_actions=mb_masks)
                 
                 # Forward pass
                 outputs = self.network(batch_state)
@@ -169,7 +170,7 @@ class PpoAgent(Agent):
                 card_logits = outputs['card_policy']  # [B, 32]
                 
                 # Apply mask
-                masked_logits = card_logits + mb_masks
+                masked_logits = card_logits # Mask is applied inside network
                 dist = torch.distributions.Categorical(logits=masked_logits)
                 
                 new_log_probs = dist.log_prob(mb_actions)

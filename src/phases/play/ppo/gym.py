@@ -74,7 +74,8 @@ class Gym:
             # Play games and collect experience
             records, phase_reward = self.play_games(
                 num_games=games_per_phase,
-                opponent_types=opponent_types
+                opponent_types=opponent_types,
+                phase=phase
             )
             
             # Train on collected experience
@@ -107,7 +108,8 @@ class Gym:
     def play_games(
         self, 
         num_games: int = 100,
-        opponent_types: List[str] = None
+        opponent_types: List[str] = None,
+        phase: int = 1
     ) -> Tuple[List[Record], float]:
         """
         Play multiple games and collect experience.
@@ -115,6 +117,7 @@ class Gym:
         Args:
             num_games: Number of games to play
             opponent_types: List of opponent types for the 3 opponents
+            phase: Current training phase (used to suppress warnings in phase 1)
             
         Returns:
             records: List of Record objects for training
@@ -126,7 +129,7 @@ class Gym:
         all_records: List[Record] = []
         total_rewards = []
         
-        for game in range(1, num_games + 1):
+        for _ in range(1, num_games + 1):
             # Setup game
             hands = Deck.create(shuffle=True)
             
@@ -149,7 +152,7 @@ class Gym:
             else:
                 selected_opponents = opponent_types
                 
-            opponents = [self._create_opponent(opp_type) for opp_type in selected_opponents]
+            opponents = [self._create_opponent(opp_type, phase=phase) for opp_type in selected_opponents]
             
             # Assign agents (PPO is player 0)
             agents = [self.agent] + opponents
@@ -179,12 +182,13 @@ class Gym:
         avg_reward = np.mean(total_rewards) if total_rewards else 0.0
         return all_records, avg_reward
 
-    def _create_opponent(self, opponent_type: str):
+    def _create_opponent(self, opponent_type: str, phase: int = 1):
         """
         Create an opponent agent of the specified type.
         
         Args:
             opponent_type: 'random', 'aggressive', 'soft', or 'ppo'
+            phase: Current training phase (used to suppress warnings in phase 1)
             
         Returns:
             Agent instance
@@ -206,7 +210,7 @@ class Gym:
             if os.path.exists(model_path):
                 opponent_network.load_state_dict(torch.load(model_path, map_location=self.device))
                 opponent_network.eval()
-            else:
+            elif phase > 1:
                 print(f"Warning: PPO model not found at {model_path}, using random weights")
                 
             return PpoAgent(opponent_network)

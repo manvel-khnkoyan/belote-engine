@@ -34,7 +34,7 @@ class HumanAgent(Agent):
             else:
                 card_indices.append('.')
         
-        print(f"Hands: {' '.join(str(card) for card in player_hand)}")
+        print(f"Hands:[{' '.join(str(card) for card in player_hand)}]")
         print(f"Input:  {'   '.join(card_indices)}", end=" : ")
     
     def _get_user_choice(self, player_hand: List, valid_cards: List, valid_actions: List[ActionPlayCard]) -> Action:
