@@ -13,8 +13,8 @@ def main():
     parser.add_argument("--games-per-phase", type=int, default=100, help="Number of games per phase, default is 100")
     parser.add_argument("--model-dir", type=str, default="models", help="Directory to save/load models, default is 'models'")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility, default is 42")
-    parser.add_argument("--opponents", type=str, default="random,aggressive,soft,ppo,ppo,ppo", 
-                        help="Comma-separated opponent types: random, aggressive, soft, ppo")
+    parser.add_argument("--opponents", type=str, default="random,aggressive,soft,agent", 
+                        help="Comma-separated opponent types: random, aggressive, soft, agent")
     
     args = parser.parse_args()
     

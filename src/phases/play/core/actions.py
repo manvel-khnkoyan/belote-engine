@@ -24,16 +24,16 @@ class ActionPlayCard(Action):
     def __eq__(self, other):
         return isinstance(other, ActionPlayCard) and self.card == other.card
 
-class ActionDeclareSets(Action):
-    def __init__(self, sets: List[Set]):
-        self.sets = sets
+class ActionShowSet(Action):
+    def __init__(self, set: Set):
+        self.set = set
 
     def __repr__(self):
-        return f"DeclareSets({self.sets})"
+        return f"ShowSet({self.set})"
     
     def __eq__(self, other):
-        return isinstance(other, ActionDeclareSets) and self.sets == other.sets
+        return isinstance(other, ActionShowSet) and self.set == other.set
 
-class ActionDeclareBets(Action):
+class ActionAnnounceBelote(Action):
     def __repr__(self):
-        return "DeclareBets"
+        return "AnnounceBelote"

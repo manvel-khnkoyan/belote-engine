@@ -9,6 +9,7 @@ from src.models.trump import Trump, TrumpMode
 from src.phases.play.core.simulator import Simulator
 from src.phases.play.core.rules import Rules
 from src.phases.play.core.record import Record
+from src.phases.play.core.agent import Agent
 from src.phases.play.core.state import State
 from src.phases.play.ppo.agent import PpoAgent
 from src.phases.play.ppo.network import PPONetwork
@@ -29,62 +30,39 @@ class Gym:
         self.network = PPONetwork().to(self.device)
         self.agent = PpoAgent(self.network)
         
-        # Opponent Cache
-        self.opponent_cache = {}
-        
         # Rules
         self.rules = Rules()
 
         # Predefined agent
-        self.random_chooser = RandomChooserAgent()
-        self.aggressive_player = AggressivePlayerAgent()
         self.soft_player = SoftPlayerAgent()
+        self.agent_player = PpoAgent(self.network)
+        self.randomer_player = RandomChooserAgent()
+        self.aggressive_player = AggressivePlayerAgent()
         
         print(f"Gym initialized on device: {self.device}")
 
     def train_phases(
         self, 
-        num_phases: int = 5,
-        games_per_phase: int = 100,
-        opponent_types: List[str] = None
+        opponent_types: List[str],
+        num_phases: int,
+        games_per_phase: int,
     ):
-        """
-        Train PPO agent through multiple phases.
-        
-        Args:
-            num_phases: Number of training phases
-            games_per_phase: Number of games per phase
-            opponent_types: List of opponent types ['random', 'aggressive', 'soft']
-                           If None, defaults to random 3 opponents
-        """
-        if opponent_types is None:
-            opponent_types = ['random', 'random', 'random']
+        self.opponent_types = opponent_types
+        self.num_phases = num_phases
+        self.games_per_phase = games_per_phase
         
         print("\nStarting Phase-Based Training")
-        print(f"Total Phases: {num_phases}")
-        print(f"Games per Phase: {games_per_phase}")
-        print(f"Opponent Types: {opponent_types}\n")
+        print(f"Total Phases: {self.num_phases}")
+        print(f"Games per Phase: {self.games_per_phase}")
+        print(f"Opponent Types: {self.opponent_types}\n")
         
         phase_rewards = []
         
-        for phase in range(1, num_phases + 1):
-            print(f"\n{'='*60}")
-            print(f"PHASE {phase}/{num_phases}")
-            print(f"{'='*60}")
-            
-            # Load model from previous phase (if available)
-            if phase > 1:
-                model_path = os.path.join(self.model_dir, f"model-phase-{phase-1}.pt")
-                if os.path.exists(model_path):
-                    self.load_model(model_path)
-                    print(f"✓ Loaded model from phase {phase-1}")
+        for phase in range(1, self.num_phases + 1):
+            self._display_title(f"PHASE {phase}/{self.num_phases}")
             
             # Play games and collect experience
-            records, phase_reward = self.play_games(
-                num_games=games_per_phase,
-                opponent_types=opponent_types,
-                phase=phase
-            )
+            records, phase_reward = self.play_games()
             
             # Train on collected experience
             if records:
@@ -100,72 +78,44 @@ class Gym:
             # Save model for next phase
             model_path = os.path.join(self.model_dir, "model.pt")
             self.save_model(model_path)
-            
-            # Also save a checkpoint for this phase
-            checkpoint_path = os.path.join(self.model_dir, f"model_phase_{phase}.pt")
-            self.save_model(checkpoint_path)
-            
-            print(f"✓ Model saved to {model_path} and {checkpoint_path}")
+
+            # Reload agent with latest model
+            network = PPONetwork().to(self.device)
+            network.load_state_dict(torch.load(model_path, map_location=self.device))
+            network.eval()
+            self.agent_player = PpoAgent(network)
             
             phase_rewards.append(phase_reward)
             print(f"Phase Reward: {phase_reward:.2f}")
         
         # Summary
-        print(f"\n{'='*60}")
-        print("TRAINING SUMMARY")
-        print(f"{'='*60}")
-        for i, reward in enumerate(phase_rewards, 1):
-            print(f"Phase {i}: {reward:.2f}")
+        self._display_title("TRAINING")
+       
         print(f"Average: {np.mean(phase_rewards):.2f}")
+        print(f"Best: {np.max(phase_rewards):.2f}")
+        print(f"first: {phase_rewards[0]:.2f}")
+        print(f"Last: {phase_rewards[-1]:.2f}")
 
-    def play_games(
-        self, 
-        num_games: int = 100,
-        opponent_types: List[str] = None,
-        phase: int = 1
-    ) -> Tuple[List[Record], float]:
-        """
-        Play multiple games and collect experience.
-        
-        Args:
-            num_games: Number of games to play
-            opponent_types: List of opponent types for the 3 opponents
-            phase: Current training phase (used to suppress warnings in phase 1)
-            
-        Returns:
-            records: List of Record objects for training
-            avg_reward: Average reward across games
-        """
-        if opponent_types is None:
-            opponent_types = ['random', 'random', 'random']
-        
+    def play_games(self) -> Tuple[List[Record], float]:
+        # Play multiple games and collect experience for training.
         all_records: List[Record] = []
         total_rewards = []
         
-        for _ in range(1, num_games + 1):
+        for _ in range(1, self.games_per_phase + 1):
             # Setup game
             hands = Deck.create(shuffle=True)
             
             # Random trump
-            trump_suit = self.rng.integers(0, 4)
-            trump = Trump(TrumpMode.Regular, trump_suit)
+            trump = self._get_random_trump()
             
             # Canonicalize (transform suits based on hand strength)
             can_map, _ = Canonical.create_transform_map(hands[0], trump)
             trump.suit = can_map[trump.suit] if trump.suit is not None else None
-            hands = [
-                [Card(can_map[card.suit], card.rank) for card in hand] 
-                for hand in hands
-            ]
+            hands = [[Card(can_map[card.suit], card.rank) for card in hand] for hand in hands]
             
             # Create opponents
             # If more than 3 opponent types are provided, randomly sample 3
-            if len(opponent_types) > 3:
-                selected_opponents = self.rng.choice(opponent_types, size=3, replace=True)
-            else:
-                selected_opponents = opponent_types
-                
-            opponents = [self._create_opponent(opp_type, phase=phase) for opp_type in selected_opponents]
+            opponents = self._select_opponents(self.opponent_types)
             
             # Assign agents (PPO is player 0)
             agents = [self.agent] + opponents
@@ -187,60 +137,41 @@ class Gym:
             # Track reward
             game_reward = sum(r.instant_reward for r in agent_records) + (agent_records[-1].accrued_reward if agent_records else 0)
             total_rewards.append(game_reward)
-            
-            #if game % 10 == 0:
-            #    avg_10 = np.mean(total_rewards[-10:])
-            #    print(f"  Game {game}/{num_games} | Avg Reward (last 10): {avg_10:.2f}")
         
         avg_reward = np.mean(total_rewards) if total_rewards else 0.0
         return all_records, avg_reward
 
-    def _create_opponent(self, opponent_type: str, phase: int = 1):
-        """
-        Create an opponent agent of the specified type.
-        
-        Args:
-            opponent_type: 'random', 'aggressive', 'soft', or 'ppo'
-            phase: Current training phase (used to suppress warnings in phase 1)
-            
-        Returns:
-            Agent instance
-        """
-        opponent_type = opponent_type.lower()
-        
-        if opponent_type == 'random':
-            return self.random_chooser
-        
-        if opponent_type == 'aggressive':
-            return self.aggressive_player
-        
-        if opponent_type == 'soft':
-            return self.soft_player
-        
-        if opponent_type == 'ppo':
-            # Check cache first
-            model_path = os.path.join(self.model_dir, "model.pt")
-            
-            # Only reload if the file on disk has changed or isn't cached
-            # For simplicity, let's just load once per phase or check if key exists
-            if 'ppo' not in self.opponent_cache:
-                opponent_network = PPONetwork().to(self.device)
-                if os.path.exists(model_path):
-                    opponent_network.load_state_dict(torch.load(model_path, map_location=self.device))
-                    opponent_network.eval() # Opponents should always be in eval mode
-                    self.opponent_cache['ppo'] = opponent_network
-                elif phase > 1:
-                    print(f"Warning: PPO model not found, using random weights")
-                    self.opponent_cache['ppo'] = opponent_network
-                else:
-                     # Phase 1: just random weights
-                     self.opponent_cache['ppo'] = opponent_network
+    def _select_opponents(self, opponent_names: str) -> List[Agent]:
+        assert len(opponent_names) >= 3, "At least 3 opponent types must be provided."
 
-            # Create a NEW agent but share the network (read-only)
-            return PpoAgent(self.opponent_cache['ppo'])
-        else:
-            print(f"Unknown opponent type '{opponent_type}', defaulting to random")
-            return RandomChooserAgent()
+        players = {
+            'random': self.randomer_player,
+            'aggressive': self.aggressive_player,
+            'soft': self.soft_player,
+            'agent': self.agent_player
+        }
+
+        assert all(opp_type.lower() in players for opp_type in opponent_names), \
+            f"Invalid opponent types in {opponent_names}. Valid types are: {list(players.keys())}"
+        
+        # Randomly select 3 opponents from the provided types
+        selected_opponents = self.rng.choice(opponent_names, size=3, replace=True)
+
+        return [players[opp_type.lower()] for opp_type in selected_opponents]
+
+    def _display_title(self, title: str):
+        print(f"\n{'='*60}{title}{'='*60}")
+        
+    def _get_random_trump(self) -> Trump:
+        """Generate a random trump configuration."""
+        number = self.rng.integers(0, 4) # 0-3: Regular, 4: NoTrump, 5: AllTrump
+
+        if number < 4:
+            return Trump(TrumpMode.Regular, number)
+        if number == 4:
+            return Trump(TrumpMode.NoTrump, None)
+        if number == 5:
+            return Trump(TrumpMode.AllTrump, None)
 
     def _compute_gae(self, records: List[Record], gamma: float = 0.99, lam: float = 0.95):
         """
