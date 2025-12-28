@@ -15,10 +15,12 @@ BatchedState = namedtuple('BatchedState', ['probabilities', 'tables', 'history',
 
 
 class PpoAgent(Agent):
-    def __init__(self, network: PPONetwork):
+    def __init__(self, network: PPONetwork, rng: np.random.Generator | None = None):
+        super().__init__()
         self.network = network
         self.device = next(network.parameters()).device
         self.optimizer = torch.optim.Adam(network.parameters(), lr=1e-3, weight_decay=1e-5)
+        self.rng = rng if rng is not None else np.random.default_rng(42)
 
     def choose_action(self, state: State, actions: List[Action]) -> Tuple[Action, Dict[str, Any] | None]:
         """
@@ -144,7 +146,7 @@ class PpoAgent(Agent):
 
         # PPO Update Loop
         for _ in range(ppo_epochs):
-            np.random.shuffle(indices)
+            self.rng.shuffle(indices)
             
             for start in range(0, dataset_size, batch_size):
                 end = start + batch_size

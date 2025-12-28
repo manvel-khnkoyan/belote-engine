@@ -14,6 +14,15 @@
             "cwd": "${workspaceFolder}"
         },
         {
+            "name": "Debug Train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/phases/play/cli/train.py",
+            "console": "integratedTerminal",
+            "python": "${workspaceFolder}/bin/python",
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Python Debugger: Python File",
             "type": "debugpy",
             "request": "launch",

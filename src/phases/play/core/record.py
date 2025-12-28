@@ -11,6 +11,8 @@ class Record:
         self.state = copy.deepcopy(state)
         self.action = copy.deepcopy(action)
         self.log = copy.deepcopy(log)
+        self.round = state.round
+
         # Rewards are 2: immediate and accrued
         self.instant_reward = instant_reward
         self.accrued_reward = accrued_reward

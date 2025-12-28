@@ -7,11 +7,11 @@ from src.models.card import Card
 from src.models.trump import Trump
 
 class Result:
-    def __init__(self, hands: List[List[Card]], trump: Trump, records: List[Record]):
+    def __init__(self, hands: List[List[Card]], trump: Trump, records: List[Record], scores: List[int] = None):
         self.hands = deepcopy(hands)
         self.trump = deepcopy(trump)
         self.records = records
-        self.scores = [0, 0]  # Team scores
+        self.scores = scores if scores is not None else [0, 0]
 
     def save(self, path: str):
         # Remove existing file to avoid conflicts

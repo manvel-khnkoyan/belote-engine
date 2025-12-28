@@ -114,7 +114,8 @@ class Simulator:
 
         self._display_summary()
 
-        return Result(hands, trump, records)
+        result = Result(hands, trump, records, scores=self.scores)
+        return result
 
     def _trick_points(self, table: List[Card], trump: Trump, last_trick: bool) -> int:
         """Calculate points for the current trick"""

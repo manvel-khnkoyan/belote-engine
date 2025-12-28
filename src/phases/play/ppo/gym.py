@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+from collections import defaultdict
 from typing import List, Tuple
 from src.models.card import Card
 from src.utility.deck import Deck
@@ -10,6 +11,8 @@ from src.phases.play.core.simulator import Simulator
 from src.phases.play.core.rules import Rules
 from src.phases.play.core.record import Record
 from src.phases.play.core.agent import Agent
+from src.phases.play.core.actions import ActionPlayCard
+from src.phases.play.core.result import Result
 from src.phases.play.core.state import State
 from src.phases.play.ppo.agent import PpoAgent
 from src.phases.play.ppo.network import PPONetwork
@@ -28,14 +31,14 @@ class Gym:
         
         # Initialize Network and Agent
         self.network = PPONetwork().to(self.device)
-        self.agent = PpoAgent(self.network)
+        self.agent = PpoAgent(self.network, rng=self.rng)
         
         # Rules
         self.rules = Rules()
 
         # Predefined agent
         self.soft_player = SoftPlayerAgent()
-        self.agent_player = PpoAgent(self.network)
+        self.agent_player = PpoAgent(self.network, rng=self.rng)
         self.randomer_player = RandomChooserAgent()
         self.aggressive_player = AggressivePlayerAgent()
         
@@ -62,7 +65,7 @@ class Gym:
             self._display_title(f"PHASE {phase}/{self.num_phases}")
             
             # Play games and collect experience
-            records, phase_reward = self.play_games()
+            records, scores = self.play_games()
             
             # Train on collected experience
             if records:
@@ -74,6 +77,7 @@ class Gym:
                           f"(Policy: {metrics['policy_loss']:.4f}, "
                           f"Value: {metrics['value_loss']:.4f}, "
                           f"Entropy: {metrics['entropy']:.4f})")
+                    print(f"  Reward vs Loss: Avg Reward={scores:.2f}, Total Loss={metrics['total_loss']:.4f}")
             
             # Save model for next phase
             model_path = os.path.join(self.model_dir, "model.pt")
@@ -83,23 +87,18 @@ class Gym:
             network = PPONetwork().to(self.device)
             network.load_state_dict(torch.load(model_path, map_location=self.device))
             network.eval()
-            self.agent_player = PpoAgent(network)
             
-            phase_rewards.append(phase_reward)
-            print(f"Phase Reward: {phase_reward:.2f}")
-        
-        # Summary
-        self._display_title("TRAINING")
-       
-        print(f"Average: {np.mean(phase_rewards):.2f}")
-        print(f"Best: {np.max(phase_rewards):.2f}")
-        print(f"first: {phase_rewards[0]:.2f}")
-        print(f"Last: {phase_rewards[-1]:.2f}")
+            # Update BOTH the main agent and the opponent agent with the latest model
+            self.agent = PpoAgent(network, rng=self.rng)
+            self.agent_player = PpoAgent(network, rng=self.rng)
+            
+            phase_rewards.append(scores)
+            print(f"Phase Avg Reward: {scores:.2f}")
 
     def play_games(self) -> Tuple[List[Record], float]:
         # Play multiple games and collect experience for training.
-        all_records: List[Record] = []
-        total_rewards = []
+        records: List[Record] = []
+        total_scores = []
         
         for _ in range(1, self.games_per_phase + 1):
             # Setup game
@@ -126,20 +125,19 @@ class Gym:
             
             result = simulator.simulate(hands, trump, start_player)
             
-            # Collect records for PPO agent (player 0)
+            # Collect records for PPO agent (player 0) and all records
             agent_records = [r for r in result.records if r.player == 0]
             
-            # Compute GAE
+            # Compute GAE for card play
             self._compute_gae(agent_records)
             
-            all_records.extend(agent_records)
+            # Append to overall records
+            records.extend(agent_records)
             
-            # Track reward
-            game_reward = sum(r.instant_reward for r in agent_records) + (agent_records[-1].accrued_reward if agent_records else 0)
-            total_rewards.append(game_reward)
-        
-        avg_reward = np.mean(total_rewards) if total_rewards else 0.0
-        return all_records, avg_reward
+            # Track rewards
+            total_scores.append(result.scores[0] - result.scores[1])
+
+        return records, np.mean(total_scores) if total_scores else 0.0
 
     def _select_opponents(self, opponent_names: str) -> List[Agent]:
         assert len(opponent_names) >= 3, "At least 3 opponent types must be provided."
@@ -160,7 +158,7 @@ class Gym:
         return [players[opp_type.lower()] for opp_type in selected_opponents]
 
     def _display_title(self, title: str):
-        print(f"\n{'='*60}{title}{'='*60}")
+        print(f"\n{'='*30}{title}{'='*30}")
         
     def _get_random_trump(self) -> Trump:
         """Generate a random trump configuration."""
@@ -173,35 +171,40 @@ class Gym:
         if number == 5:
             return Trump(TrumpMode.AllTrump, None)
 
-    def _compute_gae(self, records: List[Record], gamma: float = 0.99, lam: float = 0.95):
+    def _compute_gae(self, agent_records: List[Record], gamma: float = 0.99, lam: float = 0.95):
         """
-        Compute Generalized Advantage Estimation (GAE) and Returns.
-        Updates record.log with 'advantage' and 'return'.
+        Compute Generalized Advantage Estimation (GAE) and Returns for Play Phase.
+        Only processes ActionPlayCard records.
         """
-        if not records:
+
+        # Filter for play records only
+        play_records = [r for r in agent_records if isinstance(r.action, ActionPlayCard)]
+        
+        if not play_records:
             return
         
         # Extract values (ensure they are floats)
-        values = [float(r.log['value']) for r in records]
+        values = [float(r.log['value']) for r in play_records]
         
         # Normalize rewards! (Crucial for stability)
         # Belote max score is ~162. Dividing by 100 keeps it in reasonable range.
-        rewards = [r.instant_reward / 100.0 for r in records]
+        rewards = [r.accrued_reward / 100.0 for r in play_records]
         
         # Add final accrued reward to the last reward
-        if records:
-            rewards[-1] += (records[-1].accrued_reward / 100.0)
+        if play_records:
+            rewards[-1] += (play_records[-1].accrued_reward / 100.0)
         
         # Append 0 for value of terminal state
         values.append(0.0)
         
         gae = 0
-        for i in reversed(range(len(records))):
+        for i in reversed(range(len(play_records))):
             delta = rewards[i] + gamma * values[i + 1] - values[i]
             gae = delta + gamma * lam * gae
             
-            records[i].log['advantage'] = gae
-            records[i].log['return'] = gae + values[i]
+            play_records[i].log['advantage'] = gae
+            play_records[i].log['return'] = gae + values[i]
+
 
     def save_model(self, path: str):
         """Save network state to disk."""

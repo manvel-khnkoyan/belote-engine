@@ -180,9 +180,6 @@ class PPONetwork(nn.Module):
         # Combine inputs
         combined_state = torch.cat([probabilities, history], dim=-1) # [B, 256]
 
-        # ============ ACTION TYPE CLASSIFICATION ============
-        action_type_logits = self.action_classifier(combined_state.float())  # [B, 2]
-
         # ============ ENCODE HAND (from probabilities) ============
         hand_encoded = self.prob_encoder(combined_state.float())  # [B, hidden_dim]
 
@@ -233,7 +230,6 @@ class PPONetwork(nn.Module):
 
         # ============ OTHER POLICY HEADS (use hand encoding) ============
         return {
-            "action_type": action_type_logits,
             "card_policy": card_logits,  # [B, 32]
             "bid_policy": bid_logits,  # [B, 9]
             "announce_policy": announce_logits,  # [B, 10]
