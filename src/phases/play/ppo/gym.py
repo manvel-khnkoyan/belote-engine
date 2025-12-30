@@ -11,7 +11,7 @@ from src.phases.play.core.simulator import Simulator
 from src.phases.play.core.rules import Rules
 from src.phases.play.core.record import Record
 from src.phases.play.core.agent import Agent
-from src.phases.play.core.actions import ActionPlayCard
+from src.phases.play.core.actions import ActionPlayCard, ActionPass, ActionShowSet, ActionAnnounceBelote
 from src.phases.play.core.result import Result
 from src.phases.play.core.state import State
 from src.phases.play.ppo.agent import PpoAgent
@@ -88,12 +88,14 @@ class Gym:
             network.load_state_dict(torch.load(model_path, map_location=self.device))
             network.eval()
             
+            # Update reference to the current network so next save works correctly
+            self.network = network
+
             # Update BOTH the main agent and the opponent agent with the latest model
             self.agent = PpoAgent(network, rng=self.rng)
             self.agent_player = PpoAgent(network, rng=self.rng)
             
             phase_rewards.append(scores)
-            print(f"Phase Avg Reward: {scores:.2f}")
 
     def play_games(self) -> Tuple[List[Record], float]:
         # Play multiple games and collect experience for training.
@@ -125,11 +127,11 @@ class Gym:
             
             result = simulator.simulate(hands, trump, start_player)
             
+            # Compute GAE for card play
+            self._compute_play_card_gae(result.records)
+
             # Collect records for PPO agent (player 0) and all records
             agent_records = [r for r in result.records if r.player == 0]
-            
-            # Compute GAE for card play
-            self._compute_gae(agent_records)
             
             # Append to overall records
             records.extend(agent_records)
@@ -162,7 +164,7 @@ class Gym:
         
     def _get_random_trump(self) -> Trump:
         """Generate a random trump configuration."""
-        number = self.rng.integers(0, 4) # 0-3: Regular, 4: NoTrump, 5: AllTrump
+        number = self.rng.integers(0, 6) # 0-3: Regular, 4: NoTrump, 5: AllTrump
 
         if number < 4:
             return Trump(TrumpMode.Regular, number)
@@ -171,39 +173,40 @@ class Gym:
         if number == 5:
             return Trump(TrumpMode.AllTrump, None)
 
-    def _compute_gae(self, agent_records: List[Record], gamma: float = 0.99, lam: float = 0.95):
-        """
-        Compute Generalized Advantage Estimation (GAE) and Returns for Play Phase.
-        Only processes ActionPlayCard records.
-        """
-
-        # Filter for play records only
-        play_records = [r for r in agent_records if isinstance(r.action, ActionPlayCard)]
-        
+    def _compute_play_card_gae(self, records: List[Record], gamma: float = 0.99, lam: float = 0.95):
+        play_records = [r for r in records if isinstance(r.action, ActionPlayCard)]
         if not play_records:
             return
         
-        # Extract values (ensure they are floats)
-        values = [float(r.log['value']) for r in play_records]
+        rewards = [0] * 8
+        for r in play_records:
+            if r.player in (1, 3):
+                rewards[r.round] -= r.accrued_reward / 100.0
+            if r.player == 2:
+                rewards[r.round] += r.accrued_reward / (3 * 100.0) # reward but not that much
+            if r.player == 0:
+                rewards[r.round] += r.accrued_reward / (100.0)
+
+        # extract only player 0 records
+        player_play_records = [r for r in play_records if r.player == 0]
         
-        # Normalize rewards! (Crucial for stability)
-        # Belote max score is ~162. Dividing by 100 keeps it in reasonable range.
-        rewards = [r.accrued_reward / 100.0 for r in play_records]
+        if not player_play_records:
+            return
         
-        # Add final accrued reward to the last reward
-        if play_records:
-            rewards[-1] += (play_records[-1].accrued_reward / 100.0)
+        # extract values for player 0 - aligned with player_play_records
+        values = [float(r.log['value']) for r in player_play_records]
+        values.append(0)
         
-        # Append 0 for value of terminal state
-        values.append(0.0)
+        # Align rewards with player_play_records by their round
+        aligned_rewards = [rewards[r.round] for r in player_play_records]
         
         gae = 0
-        for i in reversed(range(len(play_records))):
-            delta = rewards[i] + gamma * values[i + 1] - values[i]
+        for i in reversed(range(len(player_play_records))):
+            delta = aligned_rewards[i] + gamma * values[i + 1] - values[i]
             gae = delta + gamma * lam * gae
             
-            play_records[i].log['advantage'] = gae
-            play_records[i].log['return'] = gae + values[i]
+            player_play_records[i].log['advantage'] = gae
+            player_play_records[i].log['return'] = gae + values[i]
 
 
     def save_model(self, path: str):

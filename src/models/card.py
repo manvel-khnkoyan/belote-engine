@@ -13,6 +13,10 @@ class Card:
     def __repr__(self):
         return f"{Ranks[self.rank]}{Suits[self.suit]}"
 
+    def __int__(self) -> int:
+        """Convert card to index 0-31."""
+        return self.suit * 8 + self.rank
+
     def is_trump(self, trump: Trump) -> bool:
         return (trump.mode == TrumpMode.AllTrump) or \
                (trump.mode == TrumpMode.Regular and self.suit == trump.suit)

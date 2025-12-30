@@ -236,7 +236,7 @@ class PpoAgent(Agent):
         # Pad with 36 (unknown card) to make it length 4
         while len(table_list) < 4:
             table_list.append(36)  # padding index
-        table_tensor = torch.tensor([card.to_index() if hasattr(card, 'to_index') else 36 for card in table_list], dtype=torch.long, device=self.device)
+        table_tensor = torch.tensor([int(card) for card in table_list], dtype=torch.long, device=self.device)
         table_batch = table_tensor.unsqueeze(0)  # [1, 4]
         
         # Create a mock State with tensor attributes for network
